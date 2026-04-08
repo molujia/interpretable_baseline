@@ -1,0 +1,105 @@
+{
+  "admin-basic-info": [
+    "basic"
+  ],
+  "admin-order": [
+    "order"
+  ],
+  "admin-route": [
+    "route"
+  ],
+  "admin-travel": [
+    "train"
+  ],
+  "auth": [
+    "user",
+    "admin-travel"
+  ],
+  "basic": [
+    "price",
+    "route",
+    "station",
+    "train"
+  ],
+  "consign": [
+    "consign-price"
+  ],
+  "execute": [
+    "notification"
+  ],
+  "frontend": [
+    "gateway"
+  ],
+  "gateway": [
+    "auth",
+    "verification-code",
+    "ticket-office",
+    "avatar",
+    "news",
+    "nacos",
+    "sentinel"
+  ],
+  "inside-payment": [
+    "notification"
+  ],
+  "notification": [
+    "delivery",
+    "rabbitmq"
+  ],
+  "order": [
+    "execute",
+    "cancel",
+    "voucher",
+    "rabbitmq",
+    "admin-travel"
+  ],
+  "payment": [
+    "inside-payment"
+  ],
+  "preserve": [
+    "rebook",
+    "travel"
+  ],
+  "price": [
+    "mysql"
+  ],
+  "rebook": [
+    "payment"
+  ],
+  "route": [
+    "station",
+    "train",
+    "mysql"
+  ],
+  "route-plan": [
+    "route"
+  ],
+  "seat": [
+    "order"
+  ],
+  "station": [
+    "mysql"
+  ],
+  "station-food": [
+    "food-delivery"
+  ],
+  "train": [
+    "mysql",
+    "admin-travel"
+  ],
+  "travel": [
+    "seat",
+    "config",
+    "admin-basic-info"
+  ],
+  "travel-plan": [
+    "train"
+  ],
+  "user": [
+    "station-food",
+    "train-food"
+  ],
+  "wait-order": [
+    "preserve"
+  ]
+}

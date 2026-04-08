@@ -1,0 +1,80 @@
+更难独立，理应边多才对
+2-0没删掉不奇怪，但是哪些边被删掉了？多删才奇怪
+为何0-5和2-5被删除？
+
+0 dep 1 | () with p-value 0.276954
+0 dep 2 | () with p-value 0.224136
+0 ind 3 | () with p-value 0.735786
+0 dep 4 | () with p-value 0.000000
+0 dep 5 | () with p-value 0.115508
+
+1 dep 0 | () with p-value 0.276954
+1 ind 2 | () with p-value 0.357941
+1 dep 3 | () with p-value 0.203817
+1 dep 4 | () with p-value 0.160167
+1 dep 5 | () with p-value 0.013781
+
+2 dep 0 | () with p-value 0.224136
+2 dep 3 | () with p-value 0.055285
+2 ind 4 | () with p-value 0.792592
+2 dep 5 | () with p-value 0.044237
+
+3 dep 1 | () with p-value 0.203817
+3 dep 2 | () with p-value 0.055285
+3 ind 4 | () with p-value 0.349283
+3 ind 5 | () with p-value 0.851064
+
+4 dep 0 | () with p-value 0.000000
+4 dep 1 | () with p-value 0.160167
+4 ind 5 | () with p-value 0.941784
+
+5 dep 0 | () with p-value 0.115508
+5 dep 1 | () with p-value 0.013781
+5 dep 2 | () with p-value 0.044237
+
+
+0 dep 1 | (np.int64(2),) with p-value 0.226514
+0 ind 1 | (np.int64(4),) with p-value 0.479250
+0 dep 2 | (np.int64(1),) with p-value 0.232251
+0 dep 2 | (np.int64(4),) with p-value 0.042981
+0 dep 2 | (np.int64(5),) with p-value 0.083703
+0 dep 4 | (np.int64(1),) with p-value 0.004192
+0 dep 4 | (np.int64(2),) with p-value 0.000054
+0 dep 4 | (np.int64(5),) with p-value 0.000001
+0 ind 5 | (np.int64(1),) with p-value 0.899815
+
+1 ind 3 | (np.int64(4),) with p-value 0.366156
+1 ind 4 | (np.int64(3),) with p-value 0.354142
+1 dep 5 | (np.int64(3),) with p-value 0.023963
+1 ind 5 | (np.int64(4),) with p-value 0.429960
+
+2 dep 0 | (np.int64(3),) with p-value 0.041178
+2 dep 0 | (np.int64(5),) with p-value 0.083703
+2 dep 3 | (np.int64(0),) with p-value 0.009731
+2 dep 3 | (np.int64(5),) with p-value 0.035820
+2 dep 5 | (np.int64(0),) with p-value 0.036510
+2 dep 5 | (np.int64(3),) with p-value 0.054115
+
+出现了2组合，而之前没有，而2组合删除了2-5
+2 dep 0 | (np.int64(3), np.int64(5)) with p-value 0.148698
+2 dep 3 | (np.int64(0), np.int64(5)) with p-value 0.141502
+2 ind 5 | (np.int64(0), np.int64(3)) with p-value 0.330201
+
+更难独立，理应边多才对
+0-5删了，2-5删了，5-0和5-2删了
+其实是多删了两条边，理论上不该删的？
+[[ 0  0 -1  0 -1  0]
+ [ 0  0  0  0  0  0]
+ [-1  0  0 -1  0  0]
+ [ 0  0 -1  0  0  0]
+ [-1  0  0  0  0  0]
+ [ 0  0  0  0  0  0]]
+ 经观察发现，alpha=0.2时，0-1在浅层（0）检查时被删除
+ 因此没有进行0 - 5 | (np.int64(1),)的检验
+ 而alpha=0.3时进行了这个检验，删除了0-5
+ 2 ind 5 | (np.int64(0), np.int64(3))同理
+ alpha=0.2时没有0-2，所以没有走到这一步
+
+ 原因：因为alpha增大，导致更容易拒绝独立假设，所以更难独立，所以每一层的边多了；
+ 而深入是受层的边数影响，如果浅层的边多了，就容易深入，而深入“可能”导致更多的边被删除；
+ 这，才是PC算法在alpha参数上不单调的原因。

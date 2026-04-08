@@ -1,0 +1,1075 @@
+[
+  {
+    "name": "alpha_fixed_1.0",
+    "label": "α=1.0 (CF only)",
+    "description": "CounterfactualCBN ",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 5,
+        "top3": 9,
+        "top5": 10,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 6,
+        "top3": 16,
+        "top5": 20,
+        "top1_rate": 0.3,
+        "top3_rate": 0.8,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 8,
+        "top3": 26,
+        "top5": 30,
+        "top1_rate": 0.2667,
+        "top3_rate": 0.8667,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 12,
+        "top3": 35,
+        "top5": 40,
+        "top1_rate": 0.3,
+        "top3_rate": 0.875,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 16,
+        "top3": 42,
+        "top5": 50,
+        "top1_rate": 0.32,
+        "top3_rate": 0.84,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 17,
+        "top3": 50,
+        "top5": 59,
+        "top1_rate": 0.2833,
+        "top3_rate": 0.8333,
+        "top5_rate": 0.9833
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 19,
+        "top3": 57,
+        "top5": 69,
+        "top1_rate": 0.2714,
+        "top3_rate": 0.8143,
+        "top5_rate": 0.9857
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 20,
+        "top3": 65,
+        "top5": 78,
+        "top1_rate": 0.25,
+        "top3_rate": 0.8125,
+        "top5_rate": 0.975
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 22,
+        "top3": 71,
+        "top5": 87,
+        "top1_rate": 0.2444,
+        "top3_rate": 0.7889,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 26,
+        "top3": 77,
+        "top5": 93,
+        "top1_rate": 0.2708,
+        "top3_rate": 0.8021,
+        "top5_rate": 0.9688
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 26,
+      "top3": 77,
+      "top5": 93,
+      "top1_rate": 0.2708,
+      "top3_rate": 0.8021,
+      "top5_rate": 0.9688
+    }
+  },
+  {
+    "name": "alpha_fixed_0.5",
+    "label": "α=0.5 (static mix)",
+    "description": "α=0.5 ",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 4,
+        "top3": 10,
+        "top5": 10,
+        "top1_rate": 0.4,
+        "top3_rate": 1.0,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 9,
+        "top3": 17,
+        "top5": 20,
+        "top1_rate": 0.45,
+        "top3_rate": 0.85,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 16,
+        "top3": 27,
+        "top5": 30,
+        "top1_rate": 0.5333,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 24,
+        "top3": 37,
+        "top5": 40,
+        "top1_rate": 0.6,
+        "top3_rate": 0.925,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 29,
+        "top3": 47,
+        "top5": 50,
+        "top1_rate": 0.58,
+        "top3_rate": 0.94,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 34,
+        "top3": 55,
+        "top5": 60,
+        "top1_rate": 0.5667,
+        "top3_rate": 0.9167,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 40,
+        "top3": 65,
+        "top5": 70,
+        "top1_rate": 0.5714,
+        "top3_rate": 0.9286,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 46,
+        "top3": 74,
+        "top5": 79,
+        "top1_rate": 0.575,
+        "top3_rate": 0.925,
+        "top5_rate": 0.9875
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 52,
+        "top3": 83,
+        "top5": 89,
+        "top1_rate": 0.5778,
+        "top3_rate": 0.9222,
+        "top5_rate": 0.9889
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 57,
+        "top3": 89,
+        "top5": 95,
+        "top1_rate": 0.5938,
+        "top3_rate": 0.9271,
+        "top5_rate": 0.9896
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 57,
+      "top3": 89,
+      "top5": 95,
+      "top1_rate": 0.5938,
+      "top3_rate": 0.9271,
+      "top5_rate": 0.9896
+    }
+  },
+  {
+    "name": "alpha_fixed_0.7",
+    "label": "α=0.7 (static, CF-biased)",
+    "description": " CF α=0.7 ",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 4,
+        "top3": 9,
+        "top5": 10,
+        "top1_rate": 0.4,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 8,
+        "top3": 17,
+        "top5": 20,
+        "top1_rate": 0.4,
+        "top3_rate": 0.85,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 15,
+        "top3": 27,
+        "top5": 30,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 21,
+        "top3": 37,
+        "top5": 40,
+        "top1_rate": 0.525,
+        "top3_rate": 0.925,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 26,
+        "top3": 47,
+        "top5": 50,
+        "top1_rate": 0.52,
+        "top3_rate": 0.94,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 30,
+        "top3": 55,
+        "top5": 60,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9167,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 35,
+        "top3": 65,
+        "top5": 70,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9286,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 40,
+        "top3": 74,
+        "top5": 79,
+        "top1_rate": 0.5,
+        "top3_rate": 0.925,
+        "top5_rate": 0.9875
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 46,
+        "top3": 83,
+        "top5": 89,
+        "top1_rate": 0.5111,
+        "top3_rate": 0.9222,
+        "top5_rate": 0.9889
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 51,
+        "top3": 89,
+        "top5": 95,
+        "top1_rate": 0.5312,
+        "top3_rate": 0.9271,
+        "top5_rate": 0.9896
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 51,
+      "top3": 89,
+      "top5": 95,
+      "top1_rate": 0.5312,
+      "top3_rate": 0.9271,
+      "top5_rate": 0.9896
+    }
+  },
+  {
+    "name": "alpha_dynamic_v4",
+    "label": "α dynamic v4 (1.0→0.20, legacy)",
+    "description": "v4 legacy: exponential decay 1.0->0.20",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 5,
+        "top3": 9,
+        "top5": 10,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 8,
+        "top3": 17,
+        "top5": 20,
+        "top1_rate": 0.4,
+        "top3_rate": 0.85,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 15,
+        "top3": 27,
+        "top5": 30,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 23,
+        "top3": 37,
+        "top5": 40,
+        "top1_rate": 0.575,
+        "top3_rate": 0.925,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 28,
+        "top3": 47,
+        "top5": 50,
+        "top1_rate": 0.56,
+        "top3_rate": 0.94,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 33,
+        "top3": 55,
+        "top5": 60,
+        "top1_rate": 0.55,
+        "top3_rate": 0.9167,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 40,
+        "top3": 65,
+        "top5": 70,
+        "top1_rate": 0.5714,
+        "top3_rate": 0.9286,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 47,
+        "top3": 74,
+        "top5": 79,
+        "top1_rate": 0.5875,
+        "top3_rate": 0.925,
+        "top5_rate": 0.9875
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 53,
+        "top3": 83,
+        "top5": 89,
+        "top1_rate": 0.5889,
+        "top3_rate": 0.9222,
+        "top5_rate": 0.9889
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 58,
+        "top3": 89,
+        "top5": 95,
+        "top1_rate": 0.6042,
+        "top3_rate": 0.9271,
+        "top5_rate": 0.9896
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 58,
+      "top3": 89,
+      "top5": 95,
+      "top1_rate": 0.6042,
+      "top3_rate": 0.9271,
+      "top5_rate": 0.9896
+    }
+  },
+  {
+    "name": "alpha_adaptive_v5",
+    "label": "α adaptive (CLLM v5, default)",
+    "description": "v5 adaptive: bisection search every 30 cases",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 5,
+        "top3": 9,
+        "top5": 10,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 8,
+        "top3": 17,
+        "top5": 20,
+        "top1_rate": 0.4,
+        "top3_rate": 0.85,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 15,
+        "top3": 27,
+        "top5": 30,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 22,
+        "top3": 37,
+        "top5": 40,
+        "top1_rate": 0.55,
+        "top3_rate": 0.925,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 31,
+        "top3": 47,
+        "top5": 50,
+        "top1_rate": 0.62,
+        "top3_rate": 0.94,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 36,
+        "top3": 57,
+        "top5": 60,
+        "top1_rate": 0.6,
+        "top3_rate": 0.95,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 45,
+        "top3": 67,
+        "top5": 70,
+        "top1_rate": 0.6429,
+        "top3_rate": 0.9571,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 53,
+        "top3": 76,
+        "top5": 79,
+        "top1_rate": 0.6625,
+        "top3_rate": 0.95,
+        "top5_rate": 0.9875
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 59,
+        "top3": 85,
+        "top5": 89,
+        "top1_rate": 0.6556,
+        "top3_rate": 0.9444,
+        "top5_rate": 0.9889
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 64,
+        "top3": 91,
+        "top5": 95,
+        "top1_rate": 0.6667,
+        "top3_rate": 0.9479,
+        "top5_rate": 0.9896
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 64,
+      "top3": 91,
+      "top5": 95,
+      "top1_rate": 0.6667,
+      "top3_rate": 0.9479,
+      "top5_rate": 0.9896
+    },
+    "alpha_log": [
+      {
+        "total": 30,
+        "alpha_optimal": 0.2296,
+        "loo_top1": 0.9,
+        "window_size": 30
+      },
+      {
+        "total": 60,
+        "alpha_optimal": 0.2296,
+        "loo_top1": 0.95,
+        "window_size": 60
+      },
+      {
+        "total": 90,
+        "alpha_optimal": 0.2296,
+        "loo_top1": 0.95,
+        "window_size": 60
+      }
+    ]
+  },
+  {
+    "name": "alpha_rag",
+    "label": "alpha RAG local-BoW (1-cosine_sim)",
+    "description": "RAG(bow): alpha = 1 - cosine_sim, local BoW encoder",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 2,
+        "top3": 9,
+        "top5": 10,
+        "top1_rate": 0.2,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 5,
+        "top3": 17,
+        "top5": 18,
+        "top1_rate": 0.25,
+        "top3_rate": 0.85,
+        "top5_rate": 0.9
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 11,
+        "top3": 27,
+        "top5": 28,
+        "top1_rate": 0.3667,
+        "top3_rate": 0.9,
+        "top5_rate": 0.9333
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 17,
+        "top3": 37,
+        "top5": 38,
+        "top1_rate": 0.425,
+        "top3_rate": 0.925,
+        "top5_rate": 0.95
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 26,
+        "top3": 47,
+        "top5": 48,
+        "top1_rate": 0.52,
+        "top3_rate": 0.94,
+        "top5_rate": 0.96
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 31,
+        "top3": 57,
+        "top5": 58,
+        "top1_rate": 0.5167,
+        "top3_rate": 0.95,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 40,
+        "top3": 67,
+        "top5": 68,
+        "top1_rate": 0.5714,
+        "top3_rate": 0.9571,
+        "top5_rate": 0.9714
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 48,
+        "top3": 76,
+        "top5": 77,
+        "top1_rate": 0.6,
+        "top3_rate": 0.95,
+        "top5_rate": 0.9625
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 55,
+        "top3": 85,
+        "top5": 87,
+        "top1_rate": 0.6111,
+        "top3_rate": 0.9444,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 60,
+        "top3": 91,
+        "top5": 93,
+        "top1_rate": 0.625,
+        "top3_rate": 0.9479,
+        "top5_rate": 0.9688
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 60,
+      "top3": 91,
+      "top5": 93,
+      "top1_rate": 0.625,
+      "top3_rate": 0.9479,
+      "top5_rate": 0.9688
+    }
+  },
+  {
+    "name": "alpha_rag_api",
+    "label": "alpha RAG API-embed  (1-cosine_sim, APIYI)",
+    "description": "RAG(api): alpha = 1 - cosine_sim, APIYI text-embedding-3-small",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 2,
+        "top3": 9,
+        "top5": 10,
+        "top1_rate": 0.2,
+        "top3_rate": 0.9,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 5,
+        "top3": 17,
+        "top5": 18,
+        "top1_rate": 0.25,
+        "top3_rate": 0.85,
+        "top5_rate": 0.9
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 11,
+        "top3": 27,
+        "top5": 28,
+        "top1_rate": 0.3667,
+        "top3_rate": 0.9,
+        "top5_rate": 0.9333
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 17,
+        "top3": 37,
+        "top5": 38,
+        "top1_rate": 0.425,
+        "top3_rate": 0.925,
+        "top5_rate": 0.95
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 26,
+        "top3": 47,
+        "top5": 48,
+        "top1_rate": 0.52,
+        "top3_rate": 0.94,
+        "top5_rate": 0.96
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 31,
+        "top3": 57,
+        "top5": 58,
+        "top1_rate": 0.5167,
+        "top3_rate": 0.95,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 40,
+        "top3": 67,
+        "top5": 68,
+        "top1_rate": 0.5714,
+        "top3_rate": 0.9571,
+        "top5_rate": 0.9714
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 48,
+        "top3": 76,
+        "top5": 77,
+        "top1_rate": 0.6,
+        "top3_rate": 0.95,
+        "top5_rate": 0.9625
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 55,
+        "top3": 85,
+        "top5": 87,
+        "top1_rate": 0.6111,
+        "top3_rate": 0.9444,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 60,
+        "top3": 91,
+        "top5": 93,
+        "top1_rate": 0.625,
+        "top3_rate": 0.9479,
+        "top5_rate": 0.9688
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 60,
+      "top3": 91,
+      "top5": 93,
+      "top1_rate": 0.625,
+      "top3_rate": 0.9479,
+      "top5_rate": 0.9688
+    }
+  },
+  {
+    "name": "alpha_jaccard",
+    "label": "alpha Jaccard-based (1-max_jaccard)",
+    "description": "Jaccard: alpha = 1 - max_jaccard(features, history)",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 4,
+        "top3": 10,
+        "top5": 10,
+        "top1_rate": 0.4,
+        "top3_rate": 1.0,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 8,
+        "top3": 17,
+        "top5": 19,
+        "top1_rate": 0.4,
+        "top3_rate": 0.85,
+        "top5_rate": 0.95
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 14,
+        "top3": 27,
+        "top5": 29,
+        "top1_rate": 0.4667,
+        "top3_rate": 0.9,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 20,
+        "top3": 37,
+        "top5": 39,
+        "top1_rate": 0.5,
+        "top3_rate": 0.925,
+        "top5_rate": 0.975
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 25,
+        "top3": 47,
+        "top5": 49,
+        "top1_rate": 0.5,
+        "top3_rate": 0.94,
+        "top5_rate": 0.98
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 30,
+        "top3": 56,
+        "top5": 59,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9333,
+        "top5_rate": 0.9833
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 37,
+        "top3": 66,
+        "top5": 69,
+        "top1_rate": 0.5286,
+        "top3_rate": 0.9429,
+        "top5_rate": 0.9857
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 44,
+        "top3": 75,
+        "top5": 78,
+        "top1_rate": 0.55,
+        "top3_rate": 0.9375,
+        "top5_rate": 0.975
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 50,
+        "top3": 84,
+        "top5": 88,
+        "top1_rate": 0.5556,
+        "top3_rate": 0.9333,
+        "top5_rate": 0.9778
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 55,
+        "top3": 90,
+        "top5": 94,
+        "top1_rate": 0.5729,
+        "top3_rate": 0.9375,
+        "top5_rate": 0.9792
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 55,
+      "top3": 90,
+      "top5": 94,
+      "top1_rate": 0.5729,
+      "top3_rate": 0.9375,
+      "top5_rate": 0.9792
+    }
+  },
+  {
+    "name": "alpha_entropy",
+    "label": "alpha Entropy-based (H_norm CBN posterior)",
+    "description": "Entropy: alpha = alpha_min + (alpha_max-alpha_min)*H_norm",
+    "snapshots": [
+      {
+        "step": 10,
+        "evaluated": 10,
+        "top1": 3,
+        "top3": 10,
+        "top5": 10,
+        "top1_rate": 0.3,
+        "top3_rate": 1.0,
+        "top5_rate": 1.0
+      },
+      {
+        "step": 20,
+        "evaluated": 20,
+        "top1": 8,
+        "top3": 17,
+        "top5": 19,
+        "top1_rate": 0.4,
+        "top3_rate": 0.85,
+        "top5_rate": 0.95
+      },
+      {
+        "step": 30,
+        "evaluated": 30,
+        "top1": 15,
+        "top3": 27,
+        "top5": 29,
+        "top1_rate": 0.5,
+        "top3_rate": 0.9,
+        "top5_rate": 0.9667
+      },
+      {
+        "step": 40,
+        "evaluated": 40,
+        "top1": 23,
+        "top3": 37,
+        "top5": 39,
+        "top1_rate": 0.575,
+        "top3_rate": 0.925,
+        "top5_rate": 0.975
+      },
+      {
+        "step": 50,
+        "evaluated": 50,
+        "top1": 28,
+        "top3": 47,
+        "top5": 49,
+        "top1_rate": 0.56,
+        "top3_rate": 0.94,
+        "top5_rate": 0.98
+      },
+      {
+        "step": 60,
+        "evaluated": 60,
+        "top1": 33,
+        "top3": 55,
+        "top5": 59,
+        "top1_rate": 0.55,
+        "top3_rate": 0.9167,
+        "top5_rate": 0.9833
+      },
+      {
+        "step": 70,
+        "evaluated": 70,
+        "top1": 39,
+        "top3": 65,
+        "top5": 69,
+        "top1_rate": 0.5571,
+        "top3_rate": 0.9286,
+        "top5_rate": 0.9857
+      },
+      {
+        "step": 80,
+        "evaluated": 80,
+        "top1": 45,
+        "top3": 74,
+        "top5": 78,
+        "top1_rate": 0.5625,
+        "top3_rate": 0.925,
+        "top5_rate": 0.975
+      },
+      {
+        "step": 90,
+        "evaluated": 90,
+        "top1": 51,
+        "top3": 83,
+        "top5": 88,
+        "top1_rate": 0.5667,
+        "top3_rate": 0.9222,
+        "top5_rate": 0.9778
+      },
+      {
+        "step": 96,
+        "evaluated": 96,
+        "top1": 56,
+        "top3": 89,
+        "top5": 94,
+        "top1_rate": 0.5833,
+        "top3_rate": 0.9271,
+        "top5_rate": 0.9792
+      }
+    ],
+    "final": {
+      "step": 96,
+      "evaluated": 96,
+      "top1": 56,
+      "top3": 89,
+      "top5": 94,
+      "top1_rate": 0.5833,
+      "top3_rate": 0.9271,
+      "top5_rate": 0.9792
+    }
+  }
+]

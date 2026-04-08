@@ -1,0 +1,50 @@
+更容易独立，理应边少才对
+
+0 ind 1 | () with p-value 0.276954
+0 ind 2 | () with p-value 0.224136
+0 ind 3 | () with p-value 0.735786
+0 dep 4 | () with p-value 0.000000
+0 dep 5 | () with p-value 0.115508
+
+1 ind 2 | () with p-value 0.357941
+1 ind 3 | () with p-value 0.203817
+1 dep 4 | () with p-value 0.160167
+1 dep 5 | () with p-value 0.013781
+
+
+2 dep 3 | () with p-value 0.055285
+2 ind 4 | () with p-value 0.792592
+2 dep 5 | () with p-value 0.044237
+
+3 dep 2 | () with p-value 0.055285
+3 ind 4 | () with p-value 0.349283
+3 ind 5 | () with p-value 0.851064
+
+4 dep 0 | () with p-value 0.000000
+4 dep 1 | () with p-value 0.160167
+4 ind 5 | () with p-value 0.941784
+
+5 dep 0 | () with p-value 0.115508
+5 dep 1 | () with p-value 0.013781
+5 dep 2 | () with p-value 0.044237
+
+
+0 dep 4 | (np.int64(5),) with p-value 0.000001
+0 dep 5 | (np.int64(4),) with p-value 0.031079
+
+1 ind 4 | (np.int64(5),) with p-value 0.548994
+1 ind 5 | (np.int64(4),) with p-value 0.429960
+
+2 dep 3 | (np.int64(5),) with p-value 0.035820
+2 dep 5 | (np.int64(3),) with p-value 0.054115
+
+5 dep 0 | (np.int64(2),) with p-value 0.061010
+5 dep 2 | (np.int64(0),) with p-value 0.036510
+
+更容易独立，理应边少才对
+[[ 0  0  0  0 -1 -1]
+ [ 0  0  0  0  0  0]
+ [ 0  0  0 -1  0 -1]
+ [ 0  0 -1  0  0  0]
+ [-1  0  0  0  0  0]
+ [-1  0 -1  0  0  0]]

@@ -1,0 +1,52 @@
+{
+  "frontend": [
+    "checkoutservice",
+    "adservice",
+    "recommendationservice",
+    "productcatalogservice",
+    "cartservice",
+    "shippingservice",
+    "currencyservice",
+    "emailservice",
+    "paymentservice"
+  ],
+  "recommendationservice": [
+    "productcatalogservice",
+    "currencyservice"
+  ],
+  "productcatalogservice": [
+    "tidb-tidb",
+    "tidb-tikv",
+    "tidb-pd"
+  ],
+  "adservice": [
+    "tidb-tidb",
+    "tidb-tikv",
+    "tidb-pd"
+  ],
+  "cartservice": [
+    "redis-cart",
+    "paymentservice"
+  ],
+  "emailservice": [],
+  "paymentservice": [],
+  "checkoutservice": [
+    "emailservice",
+    "paymentservice"
+  ],
+  "tidb-tidb": [
+    "tidb-tikv",
+    "tidb-pd"
+  ],
+  "shippingservice": [],
+  "tidb-tikv": [
+    "tidb-tidb",
+    "tidb-pd"
+  ],
+  "tidb-pd": [
+    "tidb-tikv",
+    "tidb-tidb"
+  ],
+  "currencyservice": [],
+  "redis-cart": []
+}

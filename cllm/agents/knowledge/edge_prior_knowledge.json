@@ -1,0 +1,46 @@
+{
+  "_description": "EdgeFilter Step-0 prior knowledge: spurious edges for both DS25 and TT datasets. Edges are removed deterministically without any LLM call before collider detection. DS25 edges: frontend->emailservice, frontend->paymentservice, recommendationservice->currencyservice, cartservice->paymentservice. TT edges: auth->admin-travel, order->admin-travel, travel->admin-basic-info, train->admin-travel.",
+  "_format": "Each entry in edges_to_remove has three fields: src (source service), dst (destination service), and reason (domain justification).",
+  "edges_to_remove": [
+    {
+      "src": "frontend",
+      "dst": "emailservice",
+      "reason": "frontend does not directly invoke emailservice. This edge arises from co-occurrence of high frontend load with email notification delays via a shared downstream bottleneck. It is a confounding variable, not a direct service call dependency."
+    },
+    {
+      "src": "frontend",
+      "dst": "paymentservice",
+      "reason": "frontend invokes paymentservice only indirectly via checkoutservice. A direct frontend->paymentservice edge is a false positive inferred from latency correlation between the frontend page and the payment gateway during peak load periods."
+    },
+    {
+      "src": "recommendationservice",
+      "dst": "currencyservice",
+      "reason": "recommendationservice fetches product data from productcatalogservice but does not call currencyservice directly. This edge was incorrectly inferred from a shared response-time pattern during a currency fluctuation event that also affected recommendation latency."
+    },
+    {
+      "src": "cartservice",
+      "dst": "paymentservice",
+      "reason": "cartservice does not directly invoke paymentservice. The dependency is mediated by checkoutservice: cartservice -> checkoutservice -> paymentservice. The direct edge is a false positive inferred from SLA monitoring data and would create a spurious collider at paymentservice."
+    },
+    {
+      "src": "auth",
+      "dst": "admin-travel",
+      "reason": "auth service (authentication) does not have a direct call dependency on admin-travel (travel management admin API). This edge arises from a monitoring correlation artifact during a load test that simultaneously stressed auth and admin services."
+    },
+    {
+      "src": "order",
+      "dst": "admin-travel",
+      "reason": "order service does not call admin-travel directly. The observed co-occurrence of anomalies is due to shared database contention, not a service call dependency."
+    },
+    {
+      "src": "travel",
+      "dst": "admin-basic-info",
+      "reason": "travel service queries basic-info service for route data but does not call admin-basic-info (the admin management interface). This edge is a false positive from topology auto-discovery conflating the user-facing and admin APIs."
+    },
+    {
+      "src": "train",
+      "dst": "admin-travel",
+      "reason": "train service handles train schedule queries and does not depend on admin-travel. This edge was incorrectly inferred from a deployment event where both services restarted simultaneously."
+    }
+  ]
+}

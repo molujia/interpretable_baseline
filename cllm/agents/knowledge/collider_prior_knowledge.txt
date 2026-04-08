@@ -1,0 +1,41 @@
+# ColliderFilter Step-2 Prior Knowledge (injected into LLM prompt)
+# This file is concatenated into the LLM prompt in EdgeFilterAgent._llm_eliminate().
+# It instructs the agent to identify and eliminate collider bias in the causal graph.
+
+## What is a Collider?
+In a directed causal graph, node C is a collider if it has two parent nodes A and B
+(i.e., A->C<-B) AND there is a directed edge between A and B.
+Retaining colliders introduces explaining-away bias: when C is anomalous,
+observing that A is anomalous reduces the inferred probability that B is anomalous,
+causing incorrect negative correlation between A and B in Bayesian inference.
+
+## Elimination Rules (apply in order of priority)
+
+### Rule 1 — Redundant parent-service-to-host edge (same-host co-deployment)
+  Scenario: Services A and B are both deployed on host H, A->B exists (A is upstream),
+            and both A->H and B->H exist.
+  Action:   Remove A->H; keep B->H and A->B.
+  Reason:   A's effect on H is already captured via A->B->H.
+            The direct A->H edge becomes redundant once we condition on B,
+            and retaining it causes explaining-away bias at H.
+
+### Rule 2 — Transitive redundancy in service chains
+  Scenario: A->B->C and A->C all exist; A, B, C are all service nodes (not hosts).
+  Action:   Remove A->C if domain knowledge confirms B fully mediates A's effect on C.
+  Caution:  Apply only when there is strong evidence for full mediation;
+            default to keeping the edge if uncertain.
+
+### Rule 3 — Residual spurious collider after Step-0 cleanup
+  Scenario: A collider node has a parent whose edge was NOT caught by Step-0
+            (edge_prior_knowledge.json) but is believed to be spurious based on
+            the same reasoning patterns as Step-0 rules.
+  Action:   Apply the same logic as Step-0 — if the edge lacks a documented
+            causal mechanism and appears to arise from correlation artifacts,
+            remove it. Explicitly state which Step-0 pattern it resembles.
+  Caution:  This rule should be applied last and with the most conservatism.
+
+## Important Constraints
+- When no rule clearly applies to a collider, retain all edges for that node.
+- Every removal must cite the specific rule number and a brief justification.
+- It is better to retain a questionable edge than to wrongly remove a necessary one.
+- Do not invent new rules; only apply the three rules listed above.
