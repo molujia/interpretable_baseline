@@ -902,3 +902,385 @@ def _write_counterfactual_summary(f, records: list) -> None:
         target = str(r.get("target_service", "?"))
         success = "Y" if r.get("success", False) else "N"
         f.write(f"{case_id:<12} {orig:<22} {target:<22} {success:>8}\n")
+
+
+# ===========================================================================
+# RCD (Root Cause Discovery) — system prompts and prompt builders
+# ===========================================================================
+
+SYSTEM_FORWARD_SIM_RCD = (
+    "You are simulating the RCD (Root Cause Discovery) fault diagnosis algorithm.\n"
+    "RCD uses a PC-algorithm (causal graph discovery) to find the root cause by identifying\n"
+    "metrics that are most DIRECTLY and UNIQUELY correlated with the failure.\n"
+    "\n"
+    "CRITICAL RULES:\n"
+    "1. Do NOT write or execute any code. Use step-by-step mental arithmetic only.\n"
+    "2. Show each computation step before the final JSON.\n"
+    "3. Output ONE JSON object at the very end — nothing after it.\n"
+    "\n"
+    "=== SERVICE NAME NORMALIZATION ===\n"
+    "- Strip trailing pod-index: \"auth-0\" → \"auth\"\n"
+    "- Strip \"ts-\" prefix and \"-service\" / \"-mongo\" / \"-other-service\" suffix\n"
+    "  Example: \"ts-auth-service\" → \"auth\"\n"
+    "- Merge pod metrics into the same service base name.\n"
+    "- Only keep services whose base name appears in the MODEL SERVICE LIST.\n"
+    "\n"
+    "=== METRIC WEIGHT TABLE ===\n"
+    "pod_cpu_usage / cpu_usage                        : 4.0\n"
+    "pod_memory_working_set_bytes / memory_usage      : 3.5\n"
+    "rrt / rrt_max                                    : 3.5\n"
+    "pod_processes                                    : 3.0\n"
+    "timeout                                          : 3.0\n"
+    "client_error / client_error_ratio                : 2.5\n"
+    "server_error / server_error_ratio                : 2.5\n"
+    "error / error_ratio                              : 2.0\n"
+    "pod_network_transmit_packets                     : 1.5\n"
+    "pod_network_receive_packets                      : 1.5\n"
+    "pod_network_transmit_bytes                       : 1.0\n"
+    "pod_network_receive_bytes                        : 1.0\n"
+    "request / response                               : 0.5\n"
+    "[any other metric]                               : 1.0\n"
+    "\n"
+    "=== RCD ALGORITHM (6 steps) ===\n"
+    "\n"
+    "STEP 1: Normalize service names. Collect the union of metrics for each recognized\n"
+    "  service from both anomaly_services and anomaly_pods (deduplicate per service).\n"
+    "\n"
+    "STEP 2: For each metric m that appears as anomalous in ANY service, compute:\n"
+    "  prevalence[m] = number of distinct recognized services that list metric m.\n"
+    "\n"
+    "STEP 3: For each service s with at least one anomalous metric, compute:\n"
+    "  score[s] = SUM over each metric m in service_s: weight[m] / prevalence[m]\n"
+    "  Services with no anomalous metrics: score[s] = 0.\n"
+    "\n"
+    "STEP 4: Rank services by score descending. Top-1 = root cause.\n"
+    "\n"
+    "STEP 5 (tie-break): If two services have equal score, rank the one with more\n"
+    "  total anomalous metrics higher. If still tied, use alphabetical order.\n"
+    "\n"
+    "STEP 6: Assign scores. All non-anomalous services receive score 0.\n"
+    "\n"
+    "=== RCD INTUITION ===\n"
+    "A metric that appears in ONLY ONE service (prevalence=1) is highly specific to\n"
+    "that service and strongly rejects independence with the failure node — it receives\n"
+    "FULL weight. A metric shared across MANY services (e.g., latency spikes seen\n"
+    "everywhere) is less diagnostic because it can be explained by upstream propagation\n"
+    "— it receives divided weight.\n"
+    "\n"
+    "=== OUTPUT FORMAT ===\n"
+    "Output a single JSON: {\"top1\": \"service_name\", \"scores\": {\"svc1\": 2.5, ...}}\n"
+    "Include all services; give 0.0 to services with no anomalous metrics.\n"
+)
+
+SYSTEM_COUNTERFACTUAL_RCD = (
+    "You are an expert at analyzing the RCD root-cause diagnosis algorithm.\n"
+    "Given a case, the current RCD prediction, and the scoring details, suggest\n"
+    "what metric changes would flip the top-1 prediction to a DIFFERENT service.\n"
+    "\n"
+    "RCD scores each service as: score[s] = SUM_m weight[m] / prevalence[m]\n"
+    "To flip the prediction you must either:\n"
+    "  a) INCREASE another service's score above the current top-1, OR\n"
+    "  b) DECREASE the current top-1's score so it falls below another service.\n"
+    "\n"
+    "Effective strategies:\n"
+    "  - Add a HIGH-WEIGHT metric UNIQUE to the target service (prevalence 1 → full weight).\n"
+    "  - Remove the current top-1's highest-weight unique metrics.\n"
+    "  - Add the same metric to many services (raises prevalence → reduces each score).\n"
+    "\n"
+    "Output ONE JSON object:\n"
+    "{\"target_service\": \"svc\", \"changes\": [{\"action\": \"add_metrics\","
+    " \"service\": \"svc\", \"metrics\": [\"pod_cpu_usage\"]}], \"reasoning\": \"...\"}\n"
+    "Allowed actions: add_metrics, remove_metrics, add_service, remove_service.\n"
+)
+
+
+def build_rcd_forward_prompt(
+    case: dict,
+    services: list,
+    memory_ctx: str = "",
+) -> str:
+    """Build the user-turn prompt for RCD forward simulation."""
+    lines = []
+
+    if memory_ctx:
+        lines.append("=== RECENT CASE MEMORY ===")
+        lines.append(memory_ctx)
+        lines.append("")
+
+    lines.append("=== MODEL SERVICE LIST ===")
+    lines.append(", ".join(services))
+    lines.append("")
+
+    # Anomaly data
+    anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
+    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
+
+    lines.append("=== ANOMALY DATA ===")
+    if anom_svcs:
+        lines.append("anomaly_services:")
+        for svc, mets in anom_svcs.items():
+            lines.append(f"  {svc}: {mets}")
+    else:
+        lines.append("anomaly_services: (empty)")
+
+    if anom_pods:
+        lines.append("anomaly_pods:")
+        for pod, mets in anom_pods.items():
+            lines.append(f"  {pod}: {mets}")
+    else:
+        lines.append("anomaly_pods: (empty)")
+
+    lines.append("")
+    lines.append(
+        "Apply the RCD algorithm (6 steps) to this data. Show each step's arithmetic,\n"
+        "then output ONE JSON: {\"top1\": \"service_name\", \"scores\": {...}}"
+    )
+    return "\n".join(lines)
+
+
+def build_rcd_counterfactual_prompt(
+    case: dict,
+    original_top1: str,
+    scores: dict,
+    services: list,
+    memory_ctx: str = "",
+) -> str:
+    """Build the user-turn prompt for RCD counterfactual simulation."""
+    lines = []
+
+    if memory_ctx:
+        lines.append("=== RECENT CASE MEMORY ===")
+        lines.append(memory_ctx)
+        lines.append("")
+
+    lines.append("=== MODEL SERVICE LIST ===")
+    lines.append(", ".join(services))
+    lines.append("")
+
+    anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
+    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
+
+    lines.append("=== ANOMALY DATA ===")
+    if anom_svcs:
+        lines.append("anomaly_services:")
+        for svc, mets in anom_svcs.items():
+            lines.append(f"  {svc}: {mets}")
+    if anom_pods:
+        lines.append("anomaly_pods:")
+        for pod, mets in anom_pods.items():
+            lines.append(f"  {pod}: {mets}")
+
+    lines.append("")
+    lines.append(f"=== CURRENT RCD PREDICTION ===")
+    lines.append(f"Top-1 predicted root cause: {original_top1}")
+    top5 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+    lines.append("Top-5 scores: " + ", ".join(f"{s}={v:.3f}" for s, v in top5))
+
+    lines.append("")
+    lines.append(
+        "Suggest metric changes to flip the RCD top-1 prediction away from "
+        f"'{original_top1}' to a DIFFERENT service.\n"
+        "Output ONE JSON: {\"target_service\": \"svc\", \"changes\": [...], \"reasoning\": \"...\"}"
+    )
+    return "\n".join(lines)
+
+
+# ===========================================================================
+# CRFD (Counterfactual Reasoning for Fault Diagnosis) — system prompts and builders
+# ===========================================================================
+
+SYSTEM_FORWARD_SIM_CRFD = (
+    "You are simulating the CRFD (Counterfactual Reasoning for Fault Diagnosis) algorithm.\n"
+    "CRFD uses a GNN-based counterfactual approach: for each service, simulate what happens\n"
+    "if it returns to normal (do-intervention), and measure total anomaly reduction.\n"
+    "Services that cause the greatest reduction when normalized are ranked as root cause.\n"
+    "\n"
+    "CRITICAL RULES:\n"
+    "1. Do NOT write or execute any code. Use step-by-step mental arithmetic only.\n"
+    "2. Show each computation step clearly before the final JSON.\n"
+    "3. Output ONE JSON object at the very end — nothing after it.\n"
+    "\n"
+    "=== SERVICE NAME NORMALIZATION ===\n"
+    "- Strip trailing pod-index: \"auth-0\" → \"auth\"\n"
+    "- Strip \"ts-\" prefix and \"-service\" / \"-mongo\" / \"-other-service\" suffix.\n"
+    "- Merge pod metrics into the same service base name.\n"
+    "- Only keep services whose base name appears in the MODEL SERVICE LIST.\n"
+    "\n"
+    "=== METRIC WEIGHT TABLE ===\n"
+    "pod_cpu_usage / cpu_usage                        : 4.0\n"
+    "pod_memory_working_set_bytes / memory_usage      : 3.5\n"
+    "rrt / rrt_max                                    : 3.5\n"
+    "pod_processes                                    : 3.0\n"
+    "timeout                                          : 3.0\n"
+    "client_error / client_error_ratio                : 2.5\n"
+    "server_error / server_error_ratio                : 2.5\n"
+    "error / error_ratio                              : 2.0\n"
+    "pod_network_transmit_packets                     : 1.5\n"
+    "pod_network_receive_packets                      : 1.5\n"
+    "pod_network_transmit_bytes                       : 1.0\n"
+    "pod_network_receive_bytes                        : 1.0\n"
+    "request / response                               : 0.5\n"
+    "[any other metric]                               : 1.0\n"
+    "\n"
+    "=== CRFD ALGORITHM (7 steps) ===\n"
+    "\n"
+    "STEP 1: Normalize service names. Collect the union of metrics per service.\n"
+    "\n"
+    "STEP 2: For each recognized service s with anomalous metrics, compute:\n"
+    "  row_s = 3.0 × sqrt( sum of weight_m^2 for each metric m of service s )\n"
+    "  (Services with no metrics: row_s = 0)\n"
+    "\n"
+    "STEP 3: Compute total_norm:\n"
+    "  total = sqrt( sum over ALL services: row_s^2 )\n"
+    "\n"
+    "STEP 4: Counterfactual (CF) score — how much total norm decreases if s is zeroed:\n"
+    "  CF[s] = total − sqrt( total^2 − row_s^2 )\n"
+    "  (Services with row_s=0: CF[s] = 0)\n"
+    "\n"
+    "STEP 5: Direct score:\n"
+    "  direct[s] = sum of weight_m for each metric m of service s\n"
+    "\n"
+    "STEP 6: Upstream propagation bonus (topology).\n"
+    "  If service A is listed as a CALLER of service s (A depends on s), and A also\n"
+    "  has anomalous metrics, then s's failure may have caused A's anomaly.\n"
+    "  propagation[s] = 0.25 × sum of direct[A] for all callers A of s that are anomalous.\n"
+    "  (If no topology or no anomalous callers: propagation[s] = 0)\n"
+    "\n"
+    "STEP 7: Final score and ranking:\n"
+    "  score[s] = CF[s] + 0.3 × direct[s] + propagation[s]\n"
+    "  Rank services by score descending. Top-1 = root cause.\n"
+    "\n"
+    "=== CRFD INTUITION ===\n"
+    "CRFD emulates a GNN where each service node is connected to its callers.\n"
+    "Zeroing service s (do-intervention) removes not just s's own anomaly but also\n"
+    "reduces the propagated anomaly signal visible in s's callers.\n"
+    "A deep dependency whose failure cascades up the call graph gets the highest score.\n"
+    "\n"
+    "=== OUTPUT FORMAT ===\n"
+    "Output a single JSON: {\"top1\": \"service_name\", \"scores\": {\"svc1\": 2.5, ...}}\n"
+    "Include all services; give 0.0 to services with no anomalous metrics.\n"
+)
+
+SYSTEM_COUNTERFACTUAL_CRFD = (
+    "You are an expert at analyzing the CRFD root-cause diagnosis algorithm.\n"
+    "CRFD scores: score[s] = CF[s] + 0.3×direct[s] + propagation[s]\n"
+    "where CF[s] = how much total anomaly norm decreases if service s is zeroed,\n"
+    "direct[s] = weighted metric count of s, and\n"
+    "propagation[s] = 0.25 × sum of direct[A] for callers A of s.\n"
+    "\n"
+    "To flip the prediction away from the current top-1:\n"
+    "  a) Increase another service's score (add high-weight metrics; it should have callers).\n"
+    "  b) Decrease current top-1's score (remove its metrics, break its propagation chain).\n"
+    "\n"
+    "Output ONE JSON:\n"
+    "{\"target_service\": \"svc\", \"changes\": [{\"action\": \"add_metrics\","
+    " \"service\": \"svc\", \"metrics\": [\"pod_cpu_usage\"]}], \"reasoning\": \"...\"}\n"
+    "Allowed actions: add_metrics, remove_metrics, add_service, remove_service.\n"
+)
+
+
+def build_crfd_forward_prompt(
+    case: dict,
+    services: list,
+    topology: dict = None,
+    memory_ctx: str = "",
+) -> str:
+    """Build the user-turn prompt for CRFD forward simulation."""
+    lines = []
+
+    if memory_ctx:
+        lines.append("=== RECENT CASE MEMORY ===")
+        lines.append(memory_ctx)
+        lines.append("")
+
+    lines.append("=== MODEL SERVICE LIST ===")
+    lines.append(", ".join(services))
+    lines.append("")
+
+    # Topology (caller → callees)
+    if topology:
+        lines.append("=== SERVICE TOPOLOGY (caller → callees) ===")
+        for caller, callees in sorted(topology.items()):
+            if callees:
+                lines.append(f"  {caller} → {', '.join(callees)}")
+        lines.append("")
+
+    anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
+    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
+
+    lines.append("=== ANOMALY DATA ===")
+    if anom_svcs:
+        lines.append("anomaly_services:")
+        for svc, mets in anom_svcs.items():
+            lines.append(f"  {svc}: {mets}")
+    else:
+        lines.append("anomaly_services: (empty)")
+
+    if anom_pods:
+        lines.append("anomaly_pods:")
+        for pod, mets in anom_pods.items():
+            lines.append(f"  {pod}: {mets}")
+    else:
+        lines.append("anomaly_pods: (empty)")
+
+    lines.append("")
+    lines.append(
+        "Apply the CRFD algorithm (7 steps) to this data. Show each step's arithmetic,\n"
+        "then output ONE JSON: {\"top1\": \"service_name\", \"scores\": {...}}"
+    )
+    return "\n".join(lines)
+
+
+def build_crfd_counterfactual_prompt(
+    case: dict,
+    original_top1: str,
+    scores: dict,
+    services: list,
+    topology: dict = None,
+    memory_ctx: str = "",
+) -> str:
+    """Build the user-turn prompt for CRFD counterfactual simulation."""
+    lines = []
+
+    if memory_ctx:
+        lines.append("=== RECENT CASE MEMORY ===")
+        lines.append(memory_ctx)
+        lines.append("")
+
+    lines.append("=== MODEL SERVICE LIST ===")
+    lines.append(", ".join(services))
+    lines.append("")
+
+    if topology:
+        lines.append("=== SERVICE TOPOLOGY (caller → callees) ===")
+        for caller, callees in sorted(topology.items()):
+            if callees:
+                lines.append(f"  {caller} → {', '.join(callees)}")
+        lines.append("")
+
+    anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
+    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
+
+    lines.append("=== ANOMALY DATA ===")
+    if anom_svcs:
+        lines.append("anomaly_services:")
+        for svc, mets in anom_svcs.items():
+            lines.append(f"  {svc}: {mets}")
+    if anom_pods:
+        lines.append("anomaly_pods:")
+        for pod, mets in anom_pods.items():
+            lines.append(f"  {pod}: {mets}")
+
+    lines.append("")
+    lines.append("=== CURRENT CRFD PREDICTION ===")
+    lines.append(f"Top-1 predicted root cause: {original_top1}")
+    top5 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+    lines.append("Top-5 scores: " + ", ".join(f"{s}={v:.3f}" for s, v in top5))
+
+    lines.append("")
+    lines.append(
+        "Suggest metric changes to flip the CRFD top-1 prediction away from "
+        f"'{original_top1}' to a DIFFERENT service.\n"
+        "Output ONE JSON: {\"target_service\": \"svc\", \"changes\": [...], \"reasoning\": \"...\"}"
+    )
+    return "\n".join(lines)
