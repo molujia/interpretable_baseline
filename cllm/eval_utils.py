@@ -491,9 +491,7 @@ def build_counterfactual_prompt(
 
     lines.append("=== FULL ANOMALY DATA ===")
     anomaly_services = case.get("anomaly_services", {})
-    anomaly_pods = case.get("anomaly_pods", {})
     svc_entries = {k: v for k, v in anomaly_services.items() if v}
-    pod_entries = {k: v for k, v in anomaly_pods.items() if v}
 
     lines.append("anomaly_services:")
     if svc_entries:
@@ -502,16 +500,9 @@ def build_counterfactual_prompt(
     else:
         lines.append("  (none)")
 
-    lines.append("anomaly_pods:")
-    if pod_entries:
-        for pod, metrics in pod_entries.items():
-            lines.append(f"  {pod}: {json.dumps(metrics)}")
-    else:
-        lines.append("  (none)")
-
     lines.append("")
     lines.append(
-        "Task: Suggest the minimal set of changes to the anomaly_services / anomaly_pods data "
+        "Task: Suggest the minimal set of changes to the anomaly_services data "
         "that would cause CF-CBN to predict a DIFFERENT service as the root cause. "
         "Output the result JSON."
     )
@@ -536,20 +527,33 @@ def parse_forward_response(raw: str, services: list) -> tuple:
     """
     try:
         data = _extract_last_json(raw)
-        top1 = str(data.get("top1_prediction", "unknown")).strip()
+        # Accept both "top1_prediction" (CF-CBN new format) and "top1" (CRFD/RCD legacy)
+        top1 = str(data.get("top1_prediction", data.get("top1", "unknown"))).strip()
         scores = {}
-        for entry in data.get("rankings", []):
-            svc = str(entry.get("service", "")).strip()
-            # Accept new "score" field (unsup_norm, no CBN prior) or legacy "fused_score"
-            raw_val = entry.get("score",
-                      entry.get("fused_score",
-                      entry.get("unsup_norm", 0.0)))
-            try:
-                val = float(raw_val)
-            except (TypeError, ValueError):
-                val = 0.0
-            if svc:
-                scores[svc] = val
+        rankings = data.get("rankings", [])
+        if rankings:
+            # Preferred format: rankings array with per-service score
+            for entry in rankings:
+                svc = str(entry.get("service", "")).strip()
+                # Accept "score" (new), "fused_score" (legacy CF-CBN), "unsup_norm"
+                raw_val = entry.get("score",
+                          entry.get("fused_score",
+                          entry.get("unsup_norm", 0.0)))
+                try:
+                    val = float(raw_val)
+                except (TypeError, ValueError):
+                    val = 0.0
+                if svc:
+                    scores[svc] = val
+        else:
+            # Fallback: flat {"scores": {"svc": value}} dict (CRFD/RCD legacy format)
+            for svc, val in data.get("scores", {}).items():
+                try:
+                    scores[str(svc)] = float(val)
+                except (TypeError, ValueError):
+                    scores[str(svc)] = 0.0
+            if scores and top1 == "unknown":
+                top1 = max(scores, key=lambda s: scores[s])
         # NOTE: return is AFTER the loop so all ranking entries are captured
         return top1, scores
     except Exception as exc:
@@ -1024,15 +1028,16 @@ SYSTEM_FORWARD_SIM_RCD = (
     "metrics that are most DIRECTLY and UNIQUELY correlated with the failure.\n"
     "\n"
     "CRITICAL RULES:\n"
-    "1. Do NOT write or execute any code. Use step-by-step mental arithmetic only.\n"
-    "2. Show each computation step before the final JSON.\n"
-    "3. Output ONE JSON object at the very end — nothing after it.\n"
+    "1. Do NOT write or execute any code. Use step-by-step arithmetic only.\n"
+    "2. Write your full computation as free text first.\n"
+    "3. At the very end, output ONE clean JSON block — nothing after it.\n"
+    "4. In the JSON, output ONLY real computed numbers. NEVER use placeholders like <value>.\n"
+    "   If arithmetic is complex, use reasonable approximations — but every field must be an actual number.\n"
     "\n"
     "=== SERVICE NAME NORMALIZATION ===\n"
     "- Strip trailing pod-index: \"auth-0\" → \"auth\"\n"
     "- Strip \"ts-\" prefix and \"-service\" / \"-mongo\" / \"-other-service\" suffix\n"
     "  Example: \"ts-auth-service\" → \"auth\"\n"
-    "- Merge pod metrics into the same service base name.\n"
     "- Only keep services whose base name appears in the MODEL SERVICE LIST.\n"
     "\n"
     "=== METRIC WEIGHT TABLE ===\n"
@@ -1051,35 +1056,42 @@ SYSTEM_FORWARD_SIM_RCD = (
     "request / response                               : 0.5\n"
     "[any other metric]                               : 1.0\n"
     "\n"
-    "=== RCD ALGORITHM (6 steps) ===\n"
+    "=== RCD ALGORITHM (5 steps) ===\n"
     "\n"
-    "STEP 1: Normalize service names. Collect the union of metrics for each recognized\n"
-    "  service from both anomaly_services and anomaly_pods (deduplicate per service).\n"
+    "STEP 1: Normalize service names. Collect metrics for each recognized service\n"
+    "  from anomaly_services (deduplicate per service).\n"
     "\n"
-    "STEP 2: For each metric m that appears as anomalous in ANY service, compute:\n"
-    "  prevalence[m] = number of distinct recognized services that list metric m.\n"
+    "STEP 2: For each metric m that appears in ANY anomalous service, compute:\n"
+    "  prevalence[m] = number of distinct services that list metric m.\n"
     "\n"
     "STEP 3: For each service s with at least one anomalous metric, compute:\n"
-    "  score[s] = SUM over each metric m in service_s: weight[m] / prevalence[m]\n"
-    "  Services with no anomalous metrics: score[s] = 0.\n"
+    "  score[s] = SUM over each metric m of service s: weight[m] / prevalence[m]\n"
     "\n"
-    "STEP 4: Rank services by score descending. Top-1 = root cause.\n"
+    "STEP 4: Rank anomalous services by score descending. Top-1 = root cause.\n"
+    "  Tie-break: more total metrics wins; still tied → alphabetical.\n"
     "\n"
-    "STEP 5 (tie-break): If two services have equal score, rank the one with more\n"
-    "  total anomalous metrics higher. If still tied, use alphabetical order.\n"
-    "\n"
-    "STEP 6: Assign scores. All non-anomalous services receive score 0.\n"
+    "STEP 5: Report top-1 and the score for each anomalous service.\n"
     "\n"
     "=== RCD INTUITION ===\n"
-    "A metric that appears in ONLY ONE service (prevalence=1) is highly specific to\n"
-    "that service and strongly rejects independence with the failure node — it receives\n"
-    "FULL weight. A metric shared across MANY services (e.g., latency spikes seen\n"
-    "everywhere) is less diagnostic because it can be explained by upstream propagation\n"
-    "— it receives divided weight.\n"
+    "A metric unique to one service (prevalence=1) gets FULL weight — highly diagnostic.\n"
+    "A metric shared across many services gets divided weight — less diagnostic.\n"
     "\n"
     "=== OUTPUT FORMAT ===\n"
-    "Output a single JSON: {\"top1\": \"service_name\", \"scores\": {\"svc1\": 2.5, ...}}\n"
-    "Include all services; give 0.0 to services with no anomalous metrics.\n"
+    "Write your computation steps as free text above (any format is fine).\n"
+    "Then end your response with exactly this JSON block:\n"
+    "\n"
+    "```json\n"
+    "{\n"
+    "  \"top1_prediction\": \"<service_name>\",\n"
+    "  \"rankings\": [\n"
+    "    {\"service\": \"<base_name>\", \"score\": <float, 4 decimal places>},\n"
+    "    ...\n"
+    "  ]\n"
+    "}\n"
+    "```\n"
+    "\n"
+    "Include ALL anomalous services sorted by score descending.\n"
+    "Every 'score' value must be a real number you computed — never a placeholder.\n"
 )
 
 SYSTEM_COUNTERFACTUAL_RCD = (
@@ -1121,9 +1133,7 @@ def build_rcd_forward_prompt(
     lines.append(", ".join(services))
     lines.append("")
 
-    # Anomaly data
     anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
-    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
 
     lines.append("=== ANOMALY DATA ===")
     if anom_svcs:
@@ -1133,17 +1143,9 @@ def build_rcd_forward_prompt(
     else:
         lines.append("anomaly_services: (empty)")
 
-    if anom_pods:
-        lines.append("anomaly_pods:")
-        for pod, mets in anom_pods.items():
-            lines.append(f"  {pod}: {mets}")
-    else:
-        lines.append("anomaly_pods: (empty)")
-
     lines.append("")
     lines.append(
-        "Apply the RCD algorithm (6 steps) to this data. Show each step's arithmetic,\n"
-        "then output ONE JSON: {\"top1\": \"service_name\", \"scores\": {...}}"
+        "Apply the RCD algorithm (5 steps) to this data and output the result."
     )
     return "\n".join(lines)
 
@@ -1168,17 +1170,14 @@ def build_rcd_counterfactual_prompt(
     lines.append("")
 
     anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
-    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
 
     lines.append("=== ANOMALY DATA ===")
     if anom_svcs:
         lines.append("anomaly_services:")
         for svc, mets in anom_svcs.items():
             lines.append(f"  {svc}: {mets}")
-    if anom_pods:
-        lines.append("anomaly_pods:")
-        for pod, mets in anom_pods.items():
-            lines.append(f"  {pod}: {mets}")
+    else:
+        lines.append("anomaly_services: (empty)")
 
     lines.append("")
     lines.append(f"=== CURRENT RCD PREDICTION ===")
@@ -1206,14 +1205,15 @@ SYSTEM_FORWARD_SIM_CRFD = (
     "Services that cause the greatest reduction when normalized are ranked as root cause.\n"
     "\n"
     "CRITICAL RULES:\n"
-    "1. Do NOT write or execute any code. Use step-by-step mental arithmetic only.\n"
-    "2. Show each computation step clearly before the final JSON.\n"
-    "3. Output ONE JSON object at the very end — nothing after it.\n"
+    "1. Do NOT write or execute any code. Use step-by-step arithmetic only.\n"
+    "2. Write your full computation as free text first.\n"
+    "3. At the very end, output ONE clean JSON block — nothing after it.\n"
+    "4. In the JSON, output ONLY real computed numbers. NEVER use placeholders like <value>.\n"
+    "   If arithmetic is complex, use reasonable approximations — but every field must be an actual number.\n"
     "\n"
     "=== SERVICE NAME NORMALIZATION ===\n"
     "- Strip trailing pod-index: \"auth-0\" → \"auth\"\n"
     "- Strip \"ts-\" prefix and \"-service\" / \"-mongo\" / \"-other-service\" suffix.\n"
-    "- Merge pod metrics into the same service base name.\n"
     "- Only keep services whose base name appears in the MODEL SERVICE LIST.\n"
     "\n"
     "=== METRIC WEIGHT TABLE ===\n"
@@ -1232,43 +1232,48 @@ SYSTEM_FORWARD_SIM_CRFD = (
     "request / response                               : 0.5\n"
     "[any other metric]                               : 1.0\n"
     "\n"
-    "=== CRFD ALGORITHM (7 steps) ===\n"
+    "=== CRFD ALGORITHM (6 steps) ===\n"
     "\n"
-    "STEP 1: Normalize service names. Collect the union of metrics per service.\n"
+    "STEP 1: Normalize service names. Collect metrics for each recognized service\n"
+    "  from anomaly_services.\n"
     "\n"
-    "STEP 2: For each recognized service s with anomalous metrics, compute:\n"
+    "STEP 2: For each service s with anomalous metrics, compute:\n"
     "  row_s = 3.0 × sqrt( sum of weight_m^2 for each metric m of service s )\n"
     "  (Services with no metrics: row_s = 0)\n"
     "\n"
     "STEP 3: Compute total_norm:\n"
     "  total = sqrt( sum over ALL services: row_s^2 )\n"
     "\n"
-    "STEP 4: Counterfactual (CF) score — how much total norm decreases if s is zeroed:\n"
-    "  CF[s] = total − sqrt( total^2 − row_s^2 )\n"
-    "  (Services with row_s=0: CF[s] = 0)\n"
+    "STEP 4: CF score — how much total norm decreases if service s is zeroed:\n"
+    "  CF[s] = total − sqrt( total^2 − row_s^2 )   (0 when row_s = 0)\n"
     "\n"
-    "STEP 5: Direct score:\n"
+    "STEP 5: Direct score and propagation bonus (if topology is given):\n"
     "  direct[s] = sum of weight_m for each metric m of service s\n"
+    "  propagation[s] = 0.25 × sum of direct[A] for callers A of s that are anomalous\n"
+    "  final_score[s] = CF[s] + 0.3 × direct[s] + propagation[s]\n"
     "\n"
-    "STEP 6: Upstream propagation bonus (topology).\n"
-    "  If service A is listed as a CALLER of service s (A depends on s), and A also\n"
-    "  has anomalous metrics, then s's failure may have caused A's anomaly.\n"
-    "  propagation[s] = 0.25 × sum of direct[A] for all callers A of s that are anomalous.\n"
-    "  (If no topology or no anomalous callers: propagation[s] = 0)\n"
-    "\n"
-    "STEP 7: Final score and ranking:\n"
-    "  score[s] = CF[s] + 0.3 × direct[s] + propagation[s]\n"
-    "  Rank services by score descending. Top-1 = root cause.\n"
+    "STEP 6: Rank anomalous services by final_score descending. Top-1 = root cause.\n"
     "\n"
     "=== CRFD INTUITION ===\n"
-    "CRFD emulates a GNN where each service node is connected to its callers.\n"
-    "Zeroing service s (do-intervention) removes not just s's own anomaly but also\n"
-    "reduces the propagated anomaly signal visible in s's callers.\n"
+    "Zeroing service s removes s's own anomaly AND the propagated signal in s's callers.\n"
     "A deep dependency whose failure cascades up the call graph gets the highest score.\n"
     "\n"
     "=== OUTPUT FORMAT ===\n"
-    "Output a single JSON: {\"top1\": \"service_name\", \"scores\": {\"svc1\": 2.5, ...}}\n"
-    "Include all services; give 0.0 to services with no anomalous metrics.\n"
+    "Write your computation steps as free text above (any format is fine).\n"
+    "Then end your response with exactly this JSON block:\n"
+    "\n"
+    "```json\n"
+    "{\n"
+    "  \"top1_prediction\": \"<service_name>\",\n"
+    "  \"rankings\": [\n"
+    "    {\"service\": \"<base_name>\", \"score\": <float, 4 decimal places>},\n"
+    "    ...\n"
+    "  ]\n"
+    "}\n"
+    "```\n"
+    "\n"
+    "Include ALL anomalous services sorted by score descending.\n"
+    "Every 'score' value must be a real number you computed — never a placeholder.\n"
 )
 
 SYSTEM_COUNTERFACTUAL_CRFD = (
@@ -1316,7 +1321,6 @@ def build_crfd_forward_prompt(
         lines.append("")
 
     anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
-    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
 
     lines.append("=== ANOMALY DATA ===")
     if anom_svcs:
@@ -1326,17 +1330,9 @@ def build_crfd_forward_prompt(
     else:
         lines.append("anomaly_services: (empty)")
 
-    if anom_pods:
-        lines.append("anomaly_pods:")
-        for pod, mets in anom_pods.items():
-            lines.append(f"  {pod}: {mets}")
-    else:
-        lines.append("anomaly_pods: (empty)")
-
     lines.append("")
     lines.append(
-        "Apply the CRFD algorithm (7 steps) to this data. Show each step's arithmetic,\n"
-        "then output ONE JSON: {\"top1\": \"service_name\", \"scores\": {...}}"
+        "Apply the CRFD algorithm (6 steps) to this data and output the result."
     )
     return "\n".join(lines)
 
@@ -1369,17 +1365,14 @@ def build_crfd_counterfactual_prompt(
         lines.append("")
 
     anom_svcs = {k: v for k, v in case.get("anomaly_services", {}).items() if v}
-    anom_pods = {k: v for k, v in case.get("anomaly_pods", {}).items() if v}
 
     lines.append("=== ANOMALY DATA ===")
     if anom_svcs:
         lines.append("anomaly_services:")
         for svc, mets in anom_svcs.items():
             lines.append(f"  {svc}: {mets}")
-    if anom_pods:
-        lines.append("anomaly_pods:")
-        for pod, mets in anom_pods.items():
-            lines.append(f"  {pod}: {mets}")
+    else:
+        lines.append("anomaly_services: (empty)")
 
     lines.append("")
     lines.append("=== CURRENT CRFD PREDICTION ===")
