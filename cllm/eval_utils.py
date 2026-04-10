@@ -23,6 +23,7 @@ import math
 import re
 import copy
 import time
+import datetime
 
 import requests
 import numpy as np
@@ -40,6 +41,76 @@ _PLATFORM_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "volc":   "https://ark.cn-beijing.volces.com/api/v3",
 }
+
+# ---------------------------------------------------------------------------
+# Logging infrastructure
+# ---------------------------------------------------------------------------
+
+_EVAL_LOG_FILE = None      # path to llm_calls.log
+_EVAL_FAILURES_DIR = None  # path to failures/ directory
+
+
+def set_eval_log_file(log_path: str, failures_dir: str) -> None:
+    """Initialise per-experiment LLM call logging.
+
+    Call once at the start of each eval run, after out_dir is known.
+    Creates the log file directory and failures directory if needed.
+    """
+    global _EVAL_LOG_FILE, _EVAL_FAILURES_DIR
+    _EVAL_LOG_FILE = log_path
+    _EVAL_FAILURES_DIR = failures_dir
+    os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
+    os.makedirs(failures_dir, exist_ok=True)
+
+
+def _eval_log(text: str) -> None:
+    if _EVAL_LOG_FILE is None:
+        return
+    try:
+        with open(_EVAL_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except Exception:
+        pass
+
+
+def log_failure(case_idx, reason: str, prompt: str, system: str,
+                raw_response: str, error_msg=None) -> None:
+    """Append a failure record to failures/failures.jsonl.
+
+    Args:
+        case_idx:     Case index from the main eval loop.
+        reason:       'api_failure' | 'parse_failure' | 'llm_output'
+        prompt:       The prompt sent to the LLM.
+        system:       The system prompt used.
+        raw_response: Raw LLM response text (empty string if invoke() raised).
+        error_msg:    Exception message, if any.
+    """
+    if _EVAL_FAILURES_DIR is None:
+        return
+    record = {
+        "ts":           datetime.datetime.now().isoformat(),
+        "case_idx":     case_idx,
+        "reason":       reason,
+        "prompt":       prompt,
+        "system":       system or "",
+        "raw_response": raw_response,
+        "error":        str(error_msg) if error_msg is not None else None,
+    }
+    path = os.path.join(_EVAL_FAILURES_DIR, "failures.jsonl")
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# API error type
+# ---------------------------------------------------------------------------
+
+class EvalLLMAPIError(RuntimeError):
+    """Raised when all per-call retries for an LLM API request fail."""
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +169,15 @@ class EvalLLMClient:
             except Exception as exc:
                 last_exc = exc
                 wait = 2 ** attempt  # 1s, 2s, 4s
+                _eval_log(f"[retry {attempt + 1}/{retries}] {type(exc).__name__}: {exc}  "
+                          f"(waiting {wait}s)")
                 print(
                     f"[EvalLLMClient] Attempt {attempt + 1}/{retries} failed: {exc}. "
                     f"Retrying in {wait}s...",
                     file=sys.stderr,
                 )
                 time.sleep(wait)
-        raise RuntimeError(
+        raise EvalLLMAPIError(
             f"All {retries} retries failed. Last error: {last_exc}"
         ) from last_exc
 
@@ -112,21 +185,35 @@ class EvalLLMClient:
     # Public interface
     # ------------------------------------------------------------------
 
-    def invoke(self, prompt: str, system: str = None, history: list = None) -> str:
+    def invoke(self, prompt: str, system: str = None, history: list = None,
+               case_idx=None) -> str:
         """Send a prompt and return the raw string response.
 
         Args:
-            prompt:  User-turn content.
-            system:  Optional system message (prepended).
-            history: Optional list of prior turns as {"role": ..., "content": ...} dicts.
+            prompt:    User-turn content.
+            system:    Optional system message (prepended).
+            history:   Optional list of prior turns as {"role": ..., "content": ...} dicts.
+            case_idx:  Case index for log annotation (optional).
 
         Returns:
             Assistant response as a plain string.
+
+        Raises:
+            EvalLLMAPIError: if all per-call retries are exhausted.
         """
         messages = self._build_messages(prompt, system=system, history=history)
-        return self._retry_call(messages)
+        ts = datetime.datetime.now().isoformat()
+        _eval_log(f"\n{'='*20} CASE {case_idx}  {ts} {'='*20}")
+        _eval_log(f"[model] {self.model}  [platform] {self.platform}")
+        if system:
+            _eval_log(f"[system]\n{system}")
+        _eval_log(f"[prompt]\n{prompt}")
+        result = self._retry_call(messages)   # raises EvalLLMAPIError on total failure
+        _eval_log(f"[response]\n{result}")
+        return result
 
-    def invoke_json(self, prompt: str, system: str = None, history: list = None) -> dict:
+    def invoke_json(self, prompt: str, system: str = None, history: list = None,
+                    case_idx=None) -> dict:
         """Send a prompt and parse the response as JSON.
 
         Handles Markdown code fences and finds the last top-level {...} block.
@@ -134,7 +221,7 @@ class EvalLLMClient:
         Returns:
             Parsed dict.  Raises ValueError if JSON cannot be extracted.
         """
-        raw = self.invoke(prompt, system=system, history=history)
+        raw = self.invoke(prompt, system=system, history=history, case_idx=case_idx)
         return _extract_last_json(raw)
 
 
@@ -495,30 +582,64 @@ def parse_forward_response(raw: str, services: list) -> tuple:
             fused = float(entry.get("fused_score", 0.0))
             if svc:
                 scores[svc] = fused
+        # NOTE: return is AFTER the loop so all ranking entries are captured
         return top1, scores
     except Exception as exc:
         print(f"[parse_forward_response] Parse failure: {exc}", file=sys.stderr)
         return "unknown", {}
 
 
-def parse_counterfactual_response(raw: str) -> list:
+def parse_counterfactual_response(raw: str) -> tuple:
     """Parse the LLM counterfactual response.
 
     Args:
         raw: Raw LLM response string.
 
     Returns:
-        List of change dicts.  Returns [] on any parse failure.
+        Tuple of (changes: list, agent_target: str, reasoning: str).
+        On any parse failure returns ([], "unknown", "").
     """
     try:
         data = _extract_last_json(raw)
         changes = data.get("changes", [])
         if not isinstance(changes, list):
-            return []
-        return changes
+            changes = []
+        target = str(data.get("target_service", "unknown")).strip()
+        reasoning = str(data.get("reasoning", "")).strip()
+        return changes, target, reasoning
     except Exception as exc:
         print(f"[parse_counterfactual_response] Parse failure: {exc}", file=sys.stderr)
-        return []
+        return [], "unknown", ""
+
+
+def classify_unknown_reason(raw: str, key: str = "top1_prediction") -> str:
+    """Classify why an agent result came back as 'unknown'.
+
+    Used after parse_forward_response or parse_counterfactual_response returns
+    an 'unknown' prediction to decide whether the root cause is an API-level
+    failure, a JSON-parsing problem, or a genuine 'unknown' from the LLM.
+
+    Args:
+        raw: The raw LLM response string (may be empty if invoke() raised).
+        key: JSON field to inspect. Use 'top1_prediction' for forward simulation,
+             'target_service' for counterfactual simulation.
+
+    Returns:
+        'api_failure'   — raw is empty; the LLM API call itself failed
+        'parse_failure' — raw is non-empty but valid JSON could not be extracted,
+                          or the expected field is absent/wrong type
+        'llm_output'    — the LLM returned valid JSON with the named field == 'unknown'
+    """
+    if not raw:
+        return "api_failure"
+    try:
+        data = _extract_last_json(raw)
+        val = str(data.get(key, "")).strip().lower()
+        if val == "unknown":
+            return "llm_output"
+        return "parse_failure"
+    except Exception:
+        return "parse_failure"
 
 
 # ---------------------------------------------------------------------------

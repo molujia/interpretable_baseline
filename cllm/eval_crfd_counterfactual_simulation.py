@@ -28,6 +28,10 @@ from evaluate import normalize_gt
 from crfd_engine import CRFDEngine
 from eval_utils import (
     EvalLLMClient,
+    EvalLLMAPIError,
+    set_eval_log_file,
+    log_failure,
+    classify_unknown_reason,
     SYSTEM_COUNTERFACTUAL_CRFD,
     build_crfd_counterfactual_prompt,
     parse_counterfactual_response,
@@ -68,6 +72,12 @@ def run(args):
     engine = CRFDEngine(services=cfg.all_services,
                         service2service=cfg.service2service)
     llm    = EvalLLMClient()
+
+    # ── Initialise LLM call logging ───────────────────────────────────────────
+    set_eval_log_file(
+        log_path     = os.path.join(out_dir, "llm_calls.log"),
+        failures_dir = os.path.join(out_dir, "failures"),
+    )
 
     # ── Reset ─────────────────────────────────────────────────────────────────
     if args.reset:
@@ -126,14 +136,37 @@ def run(args):
 
         # ── LLM call ──────────────────────────────────────────────────────────
         t0 = time.perf_counter()
-        try:
-            raw = llm.invoke(prompt, system=SYSTEM_COUNTERFACTUAL_CRFD)
-        except Exception as e:
-            print(f"[CRFDCf] Case {idx}: LLM error — {e}")
-            raw = ""
+        raw = ""
+        unknown_reason = None
+        for _attempt in range(2):   # initial attempt + 1 case-level retry for API failure
+            try:
+                raw = llm.invoke(
+                    prompt, system=SYSTEM_COUNTERFACTUAL_CRFD, case_idx=idx)
+                break
+            except EvalLLMAPIError as e:
+                unknown_reason = "api_failure"
+                log_failure(idx, "api_failure", prompt, SYSTEM_COUNTERFACTUAL_CRFD,
+                            "", str(e))
+                print(f"[CRFDCf] Case {idx}: API FAILURE (attempt {_attempt+1}/2): {e}")
+                if _attempt == 0:
+                    continue   # retry the case
+                break
+            except Exception as e:
+                unknown_reason = "unknown_error"
+                log_failure(idx, "unknown_error", prompt, SYSTEM_COUNTERFACTUAL_CRFD,
+                            raw, str(e))
+                print(f"[CRFDCf] Case {idx}: LLM error — {e}")
+                break
         llm_elapsed = time.perf_counter() - t0
 
         changes, agent_target, reasoning = parse_counterfactual_response(raw)
+        if agent_target == "unknown" and unknown_reason is None:
+            unknown_reason = classify_unknown_reason(raw, key="target_service")
+            if unknown_reason in ("api_failure", "parse_failure"):
+                log_failure(idx, unknown_reason, prompt, SYSTEM_COUNTERFACTUAL_CRFD,
+                            raw)
+                print(f"[CRFDCf] Case {idx}: UNKNOWN reason={unknown_reason}"
+                      f"  (see failures/ for details)")
 
         # ── Apply changes and re-run CRFD ─────────────────────────────────────
         n_changes = len(changes)
@@ -161,6 +194,7 @@ def run(args):
             "case_id":        idx,
             "top1_prediction": original_top1,
             "target_service":  agent_target,
+            "unknown_reason":  unknown_reason,
         }
         append_record(out_dir, rec)
         save_progress(out_dir, idx)

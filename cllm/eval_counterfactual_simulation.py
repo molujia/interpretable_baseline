@@ -38,6 +38,10 @@ from evaluate import normalize_gt
 
 from eval_utils import (
     EvalLLMClient,
+    EvalLLMAPIError,
+    set_eval_log_file,
+    log_failure,
+    classify_unknown_reason,
     SYSTEM_COUNTERFACTUAL,
     build_counterfactual_prompt,
     parse_counterfactual_response,
@@ -84,6 +88,12 @@ def run(args):
     )
 
     llm = EvalLLMClient()
+
+    # ── Initialise LLM call logging ─────────────────────────────────────────
+    set_eval_log_file(
+        log_path     = os.path.join(out_dir, "llm_calls.log"),
+        failures_dir = os.path.join(out_dir, "failures"),
+    )
 
     # ── Reset ───────────────────────────────────────────────────────────────
     if args.reset:
@@ -159,12 +169,37 @@ def run(args):
         changes = []
         agent_target = "unknown"
         agent_reasoning = ""
+        unknown_reason = None
         raw_response = ""
-        try:
-            raw_response    = llm.invoke(prompt, system=SYSTEM_COUNTERFACTUAL)
-            changes, agent_target, agent_reasoning = parse_counterfactual_response(raw_response)
-        except Exception as e:
-            print(f"  [{idx:>4}] LLM ERROR: {e}")
+        for _attempt in range(2):   # initial attempt + 1 case-level retry for API failure
+            try:
+                raw_response = llm.invoke(
+                    prompt, system=SYSTEM_COUNTERFACTUAL, case_idx=idx)
+            except EvalLLMAPIError as e:
+                unknown_reason = "api_failure"
+                log_failure(idx, "api_failure", prompt, SYSTEM_COUNTERFACTUAL,
+                            "", str(e))
+                print(f"  [{idx:>4}] API FAILURE (attempt {_attempt+1}/2): {e}")
+                if _attempt == 0:
+                    continue   # retry the case
+                break
+            except Exception as e:
+                unknown_reason = "unknown_error"
+                log_failure(idx, "unknown_error", prompt, SYSTEM_COUNTERFACTUAL,
+                            raw_response, str(e))
+                print(f"  [{idx:>4}] LLM ERROR: {e}")
+                break
+            changes, agent_target, agent_reasoning = parse_counterfactual_response(
+                raw_response)
+            if agent_target == "unknown":
+                unknown_reason = classify_unknown_reason(
+                    raw_response, key="target_service")
+                if unknown_reason in ("api_failure", "parse_failure"):
+                    log_failure(idx, unknown_reason, prompt, SYSTEM_COUNTERFACTUAL,
+                                raw_response)
+                    print(f"  [{idx:>4}] UNKNOWN reason={unknown_reason}"
+                          f"  (see failures/ for details)")
+            break
 
         # ── Apply changes and re-run model ───────────────────────────────
         new_top1 = original_top1
@@ -195,6 +230,7 @@ def run(args):
             "agent_reasoning":  agent_reasoning[:200] if agent_reasoning else "",
             "changes_applied":  changes,
             "n_changes":        n_changes_applied,
+            "unknown_reason":   unknown_reason,
         }
 
         all_records.append(rec)
