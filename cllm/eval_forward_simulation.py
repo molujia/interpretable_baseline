@@ -207,19 +207,24 @@ def run(args):
 
         # ── Record ────────────────────────────────────────────────────────
         rec = {
-            "index":       idx,
-            "dataset":     args.dataset,
-            "gt":          gt_bases,
-            "fault_type":  fault_type,
-            "model_top1":  model_top1,
-            "model_top3":  model_top3,
-            "agent_top1":  agent_top1,
-            "agent_top3":  agent_ranked[:3],
-            "top1_match":  top1_match,
-            "top3_match":  top3_match,
-            "kl_div":      round(kl_div, 6),
-            "alpha":       round(alpha, 4),
-            "n_history":   n_hist,
+            "index":          idx,
+            "case_id":        idx,          # canonical alias for write_summary
+            "dataset":        args.dataset,
+            "gt":             gt_bases,
+            "gt_bases":       gt_bases,     # canonical alias
+            "ground_truth":   gt_bases[0] if gt_bases else "unknown",  # canonical scalar
+            "fault_type":     fault_type,
+            "model_top1":     model_top1,
+            "model_top3":     model_top3,
+            "agent_top1":     agent_top1,
+            "top1_prediction":agent_top1,   # canonical alias for write_summary
+            "agent_top3":     agent_ranked[:3],
+            "top1_match":     top1_match,
+            "top3_match":     top3_match,
+            "kl_div":         round(kl_div, 6),
+            "kl_divergence":  round(kl_div, 6),  # canonical alias for write_summary
+            "alpha":          round(alpha, 4),
+            "n_history":      n_hist,
             # Store top-5 for later analysis
             "model_scores_top5": {
                 k: round(v, 5)
