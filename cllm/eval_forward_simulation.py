@@ -182,12 +182,9 @@ def run(args):
         # ── Build teaching prompt ─────────────────────────────────────────
         memory_ctx = build_memory_ctx(eval_records, n=3)
         prompt = build_forward_prompt(
-            case         = fault_data,
-            services     = cfg.all_services,
-            alpha        = alpha,
-            prior_counts = prior_counts,
-            n_history    = n_hist,
-            memory_ctx   = memory_ctx,
+            case       = fault_data,
+            services   = cfg.all_services,
+            memory_ctx = memory_ctx,
         )
 
         # ── Call LLM agent (single agent, with memory context) ───────────
