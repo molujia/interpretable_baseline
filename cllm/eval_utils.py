@@ -284,18 +284,18 @@ SYSTEM_FORWARD_SIM = (
     "Given anomaly data from a microservice system, predict which service is the root cause.\n"
     "\n"
     "CRITICAL RULES:\n"
-    "1. Do NOT write or execute any code. Use step-by-step mental arithmetic only.\n"
-    "2. Show computation steps clearly before the final JSON.\n"
-    "3. Output ONE JSON object at the very end \u2014 nothing after it.\n"
+    "1. Do NOT write or execute any code. Use step-by-step arithmetic only.\n"
+    "2. Write your full computation as free text first.\n"
+    "3. At the very end, output ONE clean JSON block — nothing after it.\n"
+    "4. In the JSON, output ONLY real computed numbers. NEVER use placeholders like <value> or '...'.\n"
+    "   If arithmetic is complex, use reasonable approximations — but every field must be an actual number.\n"
     "\n"
     "=== SERVICE NAME NORMALIZATION ===\n"
-    "When reading anomaly_services and anomaly_pods keys:\n"
-    '- Strip trailing pod-index suffix: "auth-0", "auth-1" \u2192 "auth"\n'
-    '- Also strip "ts-" prefix AND "-service"/"-mongo"/"-other-service" suffix to match base names\n'
-    '  Example: "ts-auth-service" \u2192 strip "ts-" and "-service" \u2192 "auth"\n'
-    '  Example: "ts-auth-mongo" \u2192 "auth"\n'
-    "- Only keep services whose base name appears in the MODEL SERVICE LIST provided.\n"
-    '- Merge pod metrics into the same service (e.g., "auth-0" and "auth-1" \u2192 "auth")\n'
+    "When reading anomaly_services keys:\n"
+    '- Strip trailing pod-index suffix: "auth-0", "auth-1" → "auth"\n'
+    '- Also strip "ts-" prefix AND "-service"/"-mongo"/"-other-service" suffix\n'
+    '  Example: "ts-auth-service" → "auth",  "ts-auth-mongo" → "auth"\n'
+    "- Only keep services whose base name appears in the MODEL SERVICE LIST.\n"
     "\n"
     "=== METRIC WEIGHT TABLE ===\n"
     "pod_cpu_usage / cpu_usage                        : 4.0\n"
@@ -313,65 +313,50 @@ SYSTEM_FORWARD_SIM = (
     "request / response                               : 0.5\n"
     '[any other metric, e.g. "cpu","mem","latency-*"] : 1.0\n'
     "\n"
-    "=== CF-CBN ALGORITHM (10 steps) ===\n"
+    "=== CF-CBN ALGORITHM (7 steps) ===\n"
     "\n"
-    "STEP 1: Map each anomaly entry to its base service name (see normalization above).\n"
-    "Collect the union of metrics for each recognized service from both anomaly_services and anomaly_pods.\n"
+    "STEP 1: Map each anomaly_services entry to its base service name.\n"
+    "Collect all metrics for each recognized service.\n"
     "\n"
-    "STEP 2: For each recognized service s with at least one metric, compute row_norm:\n"
-    "  row_s = sqrt( sum over each anomalous metric m of: (3.0 \u00d7 weight_m)^2 )\n"
-    "        = 3.0 \u00d7 sqrt( sum of weight_m^2 )\n"
-    "Services with no recognized metrics: row_s = 0.\n"
+    "STEP 2: For each service s with at least one metric, compute row_norm:\n"
+    "  row_s = 3.0 × sqrt( sum of weight_m^2  for all metrics m of service s )\n"
+    "Services with no metrics: row_s = 0.\n"
     "\n"
     "STEP 3: Compute total_norm:\n"
     "  total = sqrt( sum over ALL services s of: row_s^2 )\n"
-    "(Include all services in the model service list, most have row_s=0)\n"
     "\n"
     "STEP 4: Compute CF score for each service s:\n"
-    "  CF[s] = total \u2212 sqrt( total^2 \u2212 row_s^2 )\n"
+    "  CF[s] = total − sqrt( total^2 − row_s^2 )\n"
     "(Services with row_s=0: CF[s]=0)\n"
     "\n"
     "STEP 5: Compute direct score:\n"
-    "  direct[s] = sum of weight_m for each anomalous metric m of service s\n"
+    "  direct[s] = sum of weight_m for each metric m of service s\n"
     "\n"
-    "STEP 6: Compute unsupervised score:\n"
-    "  unsup[s] = CF[s] + 0.3 \u00d7 direct[s]\n"
+    "STEP 6: Compute combined score and normalize to [0,1]:\n"
+    "  unsup[s] = CF[s] + 0.3 × direct[s]\n"
+    "  max_u = max( unsup[s] ) over all anomalous services\n"
+    "  min_u = min( unsup[s] ) over all anomalous services\n"
+    "  score[s] = (unsup[s] − min_u) / (max_u − min_u)   if max_u > min_u\n"
+    "             1.0 / n_anomalous_services               otherwise\n"
     "\n"
-    "STEP 7: Normalize to [0,1]:\n"
-    "  min_u = min(unsup values over all services)\n"
-    "  max_u = max(unsup values over all services)\n"
-    "  If max_u > min_u: unsup_norm[s] = (unsup[s] \u2212 min_u) / (max_u \u2212 min_u)\n"
-    "  Else (all equal): unsup_norm[s] = 1.0 / n_services\n"
+    "STEP 7: Rank all anomalous services by score[s] descending; identify top-1.\n"
     "\n"
-    "STEP 8: Apply CBN prior (if n_history > 0):\n"
-    "  prior[s] = (historical_count[s] + 0.05) / (n_history + 0.05 \u00d7 n_services)\n"
-    "  fused[s] = alpha \u00d7 unsup_norm[s] + (1\u2212alpha) \u00d7 prior[s]\n"
-    "  If n_history = 0: fused[s] = unsup_norm[s]\n"
+    "=== OUTPUT FORMAT ===\n"
+    "Write your computation steps as free text above (any format is fine).\n"
+    "Then end your response with exactly this JSON block:\n"
     "\n"
-    "STEP 9: Rank all services by fused[s] descending.\n"
-    "\n"
-    "STEP 10: Output the JSON below. Include ALL services with anomalous metrics (those with row_s > 0).\n"
-    "\n"
-    "=== OUTPUT FORMAT (JSON only \u2014 nothing after this block) ===\n"
+    "```json\n"
     "{\n"
-    '  "total_norm": <float, 2 decimal places>,\n'
-    '  "alpha_used": <float>,\n'
-    '  "n_history": <int>,\n'
+    '  "top1_prediction": "<service_name>",\n'
     '  "rankings": [\n'
-    "    {\n"
-    '      "service": "<base_name>",\n'
-    '      "row_norm": <float, 4 decimal places>,\n'
-    '      "cf_score": <float, 4 decimal places>,\n'
-    '      "direct": <float, 4 decimal places>,\n'
-    '      "unsup": <float, 4 decimal places>,\n'
-    '      "unsup_norm": <float, 4 decimal places>,\n'
-    '      "prior": <float, 4 decimal places>,\n'
-    '      "fused_score": <float, 4 decimal places>\n'
-    "    }\n"
-    "  ],\n"
-    '  "top1_prediction": "<service_name>"\n'
+    '    {"service": "<base_name>", "score": <float, 4 decimal places>},\n'
+    "    ...\n"
+    "  ]\n"
     "}\n"
-    "Sort rankings by fused_score descending."
+    "```\n"
+    "\n"
+    "Include ALL anomalous services (row_s > 0), sorted by score descending.\n"
+    "Every 'score' value must be a real number you computed — never a placeholder."
 )
 
 SYSTEM_COUNTERFACTUAL = (
@@ -425,20 +410,18 @@ SYSTEM_COUNTERFACTUAL = (
 def build_forward_prompt(
     case: dict,
     services: list,
-    alpha: float,
-    prior_counts: dict,
-    n_history: int,
     memory_ctx: str = "",
+    # Deprecated parameters kept for call-site compatibility (ignored)
+    alpha: float = 1.0,
+    prior_counts: dict = None,
+    n_history: int = 0,
 ) -> str:
     """Build the user-turn prompt for forward simulation.
 
     Args:
-        case:         A single anomaly case dict with keys anomaly_services, anomaly_pods, etc.
-        services:     Full list of service names in the model.
-        alpha:        Fusion weight (0-1) for CBN prior.
-        prior_counts: Dict mapping service name to historical fault count.
-        n_history:    Number of historical cases seen so far.
-        memory_ctx:   Optional memory context string prepended to the prompt.
+        case:       A single anomaly case dict with at least an anomaly_services key.
+        services:   Full list of service names in the model.
+        memory_ctx: Optional memory context string prepended to the prompt.
 
     Returns:
         Formatted prompt string.
@@ -455,12 +438,8 @@ def build_forward_prompt(
     lines.append("")
 
     lines.append("=== ANOMALY DATA ===")
-
     anomaly_services = case.get("anomaly_services", {})
-    anomaly_pods = case.get("anomaly_pods", {})
     svc_entries = {k: v for k, v in anomaly_services.items() if v}
-    pod_entries = {k: v for k, v in anomaly_pods.items() if v}
-
     lines.append("anomaly_services:")
     if svc_entries:
         for svc, metrics in svc_entries.items():
@@ -468,28 +447,10 @@ def build_forward_prompt(
     else:
         lines.append("  (none)")
 
-    lines.append("anomaly_pods:")
-    if pod_entries:
-        for pod, metrics in pod_entries.items():
-            lines.append(f"  {pod}: {json.dumps(metrics)}")
-    else:
-        lines.append("  (none)")
-
-    lines.append("")
-    lines.append("=== CBN STATE ===")
-    lines.append(f"n_history : {n_history}")
-    lines.append(f"alpha     : {alpha}")
-
-    if n_history > 0 and prior_counts:
-        sorted_counts = sorted(prior_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-        lines.append("prior_counts (top-10):")
-        for svc, cnt in sorted_counts:
-            lines.append(f"  {svc}: {cnt}")
-
     lines.append("")
     lines.append(
-        "Apply the CF-CBN algorithm (all 10 steps) to the anomaly data above "
-        "and output the result JSON."
+        "Apply the CF-CBN algorithm (all 7 steps) to the anomaly data above "
+        "and output the result."
     )
     return "\n".join(lines)
 
@@ -579,9 +540,16 @@ def parse_forward_response(raw: str, services: list) -> tuple:
         scores = {}
         for entry in data.get("rankings", []):
             svc = str(entry.get("service", "")).strip()
-            fused = float(entry.get("fused_score", 0.0))
+            # Accept new "score" field (unsup_norm, no CBN prior) or legacy "fused_score"
+            raw_val = entry.get("score",
+                      entry.get("fused_score",
+                      entry.get("unsup_norm", 0.0)))
+            try:
+                val = float(raw_val)
+            except (TypeError, ValueError):
+                val = 0.0
             if svc:
-                scores[svc] = fused
+                scores[svc] = val
         # NOTE: return is AFTER the loop so all ranking entries are captured
         return top1, scores
     except Exception as exc:
