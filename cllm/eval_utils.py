@@ -33,7 +33,7 @@ import numpy as np
 
 EVAL_PLATFORM = "apiyi"
 EVAL_MODEL = "gpt-4o"
-EVAL_API_KEY = os.environ.get("EVAL_LLM_API_KEY", "sk-tgQpuuAdudLNhPMl2c374f28781740Bd930d5eD1Cb626461")
+EVAL_API_KEY = os.environ.get("EVAL_LLM_API_KEY", "KEY")
 
 _PLATFORM_BASE_URLS = {
     "apiyi":  "https://api.apiyi.com/v1",
