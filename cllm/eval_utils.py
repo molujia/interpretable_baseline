@@ -33,7 +33,7 @@ import numpy as np
 
 EVAL_PLATFORM = "apiyi"
 EVAL_MODEL = "gpt-4o"
-EVAL_API_KEY = os.environ.get("EVAL_LLM_API_KEY", "sk-your-apiyi-key-here")
+EVAL_API_KEY = os.environ.get("EVAL_LLM_API_KEY", "sk-tgQpuuAdudLNhPMl2c374f28781740Bd930d5eD1Cb626461")
 
 _PLATFORM_BASE_URLS = {
     "apiyi":  "https://api.apiyi.com/v1",
@@ -842,6 +842,14 @@ def write_summary(out_dir: str, all_records: list, mode: str) -> None:
     print(f"[write_summary] Summary written to {summary_path}")
 
 
+def _get_rec(r: dict, *keys, default=None):
+    """Return the first non-None value found among the given keys."""
+    for k in keys:
+        v = r.get(k)
+        if v is not None:
+            return v
+    return default
+
 def _write_forward_summary(f, records: list) -> None:
     """Write forward-simulation statistics."""
     valid = [r for r in records if not r.get("skipped", False)]
@@ -850,7 +858,15 @@ def _write_forward_summary(f, records: list) -> None:
         f.write("No valid records to summarize.\n")
         return
 
-    kl_vals = [r["kl_divergence"] for r in valid if "kl_divergence" in r]
+    def _kl(r):
+        v = _get_rec(r, "kl_divergence", "kl_div")
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+ 
+    kl_vals = [v for r in valid for v in [_kl(r)] if v is not None and not (v != v)]  # exclude NaN
+
     top1_matches = [r for r in valid if r.get("top1_match", False)]
     top3_matches = [r for r in valid if r.get("top3_match", False)]
 
@@ -868,15 +884,20 @@ def _write_forward_summary(f, records: list) -> None:
     )
     f.write("-" * 80 + "\n")
     for r in valid:
-        case_id = str(r.get("case_id", "?"))
-        gt = str(r.get("ground_truth", "?"))
-        pred = str(r.get("top1_prediction", "?"))
+        # case_id = str(r.get("case_id", "?"))
+        # gt = str(r.get("ground_truth", "?"))
+        # pred = str(r.get("top1_prediction", "?"))
+        case_id = str(_get_rec(r, "case_id", "index", default="?"))
+        # ground truth: prefer scalar string; fall back to list → take first element
+        gt_raw = _get_rec(r, "ground_truth", "gt", "gt_bases", default="?")
+        gt = gt_raw[0] if isinstance(gt_raw, list) else str(gt_raw)
+        pred = str(_get_rec(r, "top1_prediction", "agent_top1", default="?"))
+    
         t1 = "Y" if r.get("top1_match", False) else "N"
         t3 = "Y" if r.get("top3_match", False) else "N"
-        kl = r.get("kl_divergence", float("nan"))
-        f.write(
-            f"{case_id:<12} {gt:<20} {pred:<20} {t1:>6} {t3:>6} {kl:>10.4f}\n"
-        )
+        kl_v = _kl(r)
+        kl_str = f"{kl_v:>10.4f}" if kl_v is not None and not (kl_v != kl_v) else f"{'nan':>10}"
+        f.write(f"{case_id:<12} {gt:<20} {pred:<20} {t1:>6} {t3:>6} {kl_str}\n")
 
 
 def _write_counterfactual_summary(f, records: list) -> None:
