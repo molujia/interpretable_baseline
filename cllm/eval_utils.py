@@ -909,19 +909,21 @@ def build_memory_ctx(records: list, n: int = 3) -> str:
 # ---------------------------------------------------------------------------
 
 
-def write_summary(out_dir: str, all_records: list, mode: str) -> None:
+def write_summary(out_dir: str, all_records: list, mode: str,
+                  label: str = "CF-CBN") -> None:
     """Write a summary.txt to out_dir.
 
     Args:
         out_dir:     Output directory (created if it does not exist).
         all_records: Full list of result records.
         mode:        "forward" or "counterfactual".
+        label:       Engine label for the title line (e.g. "CF-CBN", "CRFD", "RCD").
     """
     os.makedirs(out_dir, exist_ok=True)
     summary_path = os.path.join(out_dir, "summary.txt")
 
     with open(summary_path, "w", encoding="utf-8") as f:
-        f.write("=== CF-CBN LLM Evaluation Summary ===\n")
+        f.write(f"=== {label} LLM Evaluation Summary ===\n")
         f.write(f"Mode   : {mode}\n")
         f.write(f"Total  : {len(all_records)} records\n\n")
 

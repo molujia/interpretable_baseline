@@ -218,7 +218,7 @@ def run(args):
             break
 
     # ── Final summary ─────────────────────────────────────────────────────────
-    write_summary(out_dir, eval_records, mode="counterfactual")
+    write_summary(out_dir, eval_records, mode="counterfactual", label="CRFD")
 
     valid        = [r for r in eval_records if not r.get("skipped")]
     n            = max(len(valid), 1)
