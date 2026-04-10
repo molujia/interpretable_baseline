@@ -39,6 +39,10 @@ from evaluate import normalize_gt
 
 from eval_utils import (
     EvalLLMClient,
+    EvalLLMAPIError,
+    set_eval_log_file,
+    log_failure,
+    classify_unknown_reason,
     SYSTEM_FORWARD_SIM,
     build_forward_prompt,
     parse_forward_response,
@@ -96,6 +100,12 @@ def run(args):
     )
 
     llm = EvalLLMClient()
+
+    # ── Initialise LLM call logging ─────────────────────────────────────────
+    set_eval_log_file(
+        log_path     = os.path.join(out_dir, "llm_calls.log"),
+        failures_dir = os.path.join(out_dir, "failures"),
+    )
 
     # ── Reset if requested ──────────────────────────────────────────────────
     if args.reset:
@@ -182,12 +192,37 @@ def run(args):
 
         # ── Call LLM agent (single agent, with memory context) ───────────
         agent_top1, agent_scores = "error", {}
+        unknown_reason = None
         raw_response = ""
-        try:
-            raw_response  = llm.invoke(prompt, system=SYSTEM_FORWARD_SIM)
-            agent_top1, agent_scores = parse_forward_response(raw_response, cfg.all_services)
-        except Exception as e:
-            print(f"  [{idx:>4}] LLM ERROR: {e}")
+        for _attempt in range(2):   # initial attempt + 1 case-level retry for API failure
+            try:
+                raw_response = llm.invoke(
+                    prompt, system=SYSTEM_FORWARD_SIM, case_idx=idx)
+            except EvalLLMAPIError as e:
+                unknown_reason = "api_failure"
+                log_failure(idx, "api_failure", prompt, SYSTEM_FORWARD_SIM, "", str(e))
+                print(f"  [{idx:>4}] API FAILURE (attempt {_attempt+1}/2): {e}")
+                if _attempt == 0:
+                    continue   # retry the case
+                break
+            except Exception as e:
+                unknown_reason = "unknown_error"
+                log_failure(idx, "unknown_error", prompt, SYSTEM_FORWARD_SIM,
+                            raw_response, str(e))
+                print(f"  [{idx:>4}] LLM ERROR: {e}")
+                break
+            agent_top1, agent_scores = parse_forward_response(
+                raw_response, cfg.all_services)
+            if agent_top1 == "unknown":
+                unknown_reason = classify_unknown_reason(raw_response)
+                if unknown_reason in ("api_failure", "parse_failure"):
+                    log_failure(idx, unknown_reason, prompt, SYSTEM_FORWARD_SIM,
+                                raw_response)
+                    print(f"  [{idx:>4}] UNKNOWN reason={unknown_reason}"
+                          f"  (see failures/ for details)")
+                    if unknown_reason == "api_failure" and _attempt == 0:
+                        continue   # retry the case
+            break
 
         # ── Compute metrics ───────────────────────────────────────────────
         top1_match = (agent_top1 == model_top1) and agent_top1 != "error"
@@ -234,6 +269,7 @@ def run(args):
                 k: round(v, 4)
                 for k, v in sorted(agent_scores.items(), key=lambda x: -x[1])[:5]
             },
+            "unknown_reason":  unknown_reason,
         }
 
         all_records.append(rec)

@@ -28,6 +28,10 @@ from evaluate import normalize_gt, hit_at_k
 from rcd_engine import RCDEngine
 from eval_utils import (
     EvalLLMClient,
+    EvalLLMAPIError,
+    set_eval_log_file,
+    log_failure,
+    classify_unknown_reason,
     SYSTEM_FORWARD_SIM_RCD,
     build_rcd_forward_prompt,
     parse_forward_response,
@@ -71,6 +75,12 @@ def run(args):
     faults = cfg.load_faults(shuffle=True, seed=42)
     engine = RCDEngine(services=cfg.all_services)
     llm = EvalLLMClient()
+
+    # ── Initialise LLM call logging ───────────────────────────────────────────
+    set_eval_log_file(
+        log_path     = os.path.join(out_dir, "llm_calls.log"),
+        failures_dir = os.path.join(out_dir, "failures"),
+    )
 
     # ── Reset if requested ────────────────────────────────────────────────────
     if args.reset:
@@ -125,14 +135,36 @@ def run(args):
 
         # ── LLM call ──────────────────────────────────────────────────────────
         t1 = time.perf_counter()
-        try:
-            raw = llm.invoke(prompt, system=SYSTEM_FORWARD_SIM_RCD)
-        except Exception as e:
-            print(f"[RCDFwd] Case {idx}: LLM error — {e}")
-            raw = ""
+        raw = ""
+        unknown_reason = None
+        for _attempt in range(2):   # initial attempt + 1 case-level retry for API failure
+            try:
+                raw = llm.invoke(
+                    prompt, system=SYSTEM_FORWARD_SIM_RCD, case_idx=idx)
+                break
+            except EvalLLMAPIError as e:
+                unknown_reason = "api_failure"
+                log_failure(idx, "api_failure", prompt, SYSTEM_FORWARD_SIM_RCD,
+                            "", str(e))
+                print(f"[RCDFwd] Case {idx}: API FAILURE (attempt {_attempt+1}/2): {e}")
+                if _attempt == 0:
+                    continue   # retry the case
+                break
+            except Exception as e:
+                unknown_reason = "unknown_error"
+                log_failure(idx, "unknown_error", prompt, SYSTEM_FORWARD_SIM_RCD,
+                            raw, str(e))
+                print(f"[RCDFwd] Case {idx}: LLM error — {e}")
+                break
         llm_elapsed = time.perf_counter() - t1
 
         agent_top1, agent_scores = parse_forward_response(raw, cfg.all_services)
+        if agent_top1 == "unknown" and unknown_reason is None:
+            unknown_reason = classify_unknown_reason(raw)
+            if unknown_reason in ("api_failure", "parse_failure"):
+                log_failure(idx, unknown_reason, prompt, SYSTEM_FORWARD_SIM_RCD, raw)
+                print(f"[RCDFwd] Case {idx}: UNKNOWN reason={unknown_reason}"
+                      f"  (see failures/ for details)")
 
         # ── KL divergence ─────────────────────────────────────────────────────
         P_model = to_distribution(model_scores, cfg.all_services)
@@ -159,6 +191,7 @@ def run(args):
             "case_id":          idx,
             "ground_truth":     gt_bases[0] if gt_bases else "unknown",
             "top1_prediction":  agent_top1,
+            "unknown_reason":   unknown_reason,
         }
         append_record(out_dir, rec)
         save_progress(out_dir, idx)
