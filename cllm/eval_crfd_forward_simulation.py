@@ -35,8 +35,8 @@ from eval_utils import (
     SYSTEM_FORWARD_SIM_CRFD,
     build_crfd_forward_prompt,
     parse_forward_response,
-    to_distribution,
-    kl_divergence,
+    rank_vector_distance,
+    _max_rank_dist,
     load_progress,
     save_progress,
     append_record,
@@ -165,73 +165,71 @@ def run(args):
                 print(f"[CRFDFwd] Case {idx}: UNKNOWN reason={unknown_reason}"
                       f"  (see failures/ for details)")
 
-        # ── KL divergence ─────────────────────────────────────────────────────
-        P_model = to_distribution(model_scores, cfg.all_services)
-        P_agent = to_distribution(agent_scores, cfg.all_services)
-        kl_div  = kl_divergence(P_model, P_agent)
-
-        top1_match = (agent_top1 == model_top1)
-        top3_match = (agent_top1 in model_top3)
+        # ── Rank-vector distance ──────────────────────────────────────────────
+        model_ranked_list = sorted(
+            [s for s in model_scores if model_scores[s] > 0],
+            key=lambda s: -model_scores[s]
+        )
+        agent_ranked_list = sorted(
+            agent_scores.keys(), key=lambda s: -agent_scores.get(s, 0.0)
+        )
+        rank_dist = rank_vector_distance(model_ranked_list, agent_ranked_list,
+                                         cfg.all_services)
 
         # ── Record ────────────────────────────────────────────────────────────
         rec = {
             "index":         idx,
+            "case_id":       idx,
             "gt_bases":      gt_bases,
+            "ground_truth":  gt_bases[0] if gt_bases else "unknown",
             "fault_type":    rc_info.get("fault_type", "unknown"),
             "model_top1":    model_top1,
-            "model_top3":    model_top3,
             "agent_top1":    agent_top1,
-            "top1_match":    top1_match,
-            "top3_match":    top3_match,
-            "kl_divergence": kl_div,
+            "rank_dist":     rank_dist,
+            "model_ranked":  model_ranked_list[:5],
+            "agent_ranked":  agent_ranked_list[:5],
             "model_elapsed": round(model_elapsed, 4),
             "llm_elapsed":   round(llm_elapsed, 4),
-            "case_id":           idx,
-            "ground_truth":      gt_bases[0] if gt_bases else "unknown",
-            "top1_prediction":   agent_top1,
-            "unknown_reason":    unknown_reason,
+            "unknown_reason": unknown_reason,
         }
         append_record(out_dir, rec)
         save_progress(out_dir, idx)
         eval_records.append(rec)
 
+        n_eval = len([r for r in eval_records if not r.get("skipped")])
+        avg_dist = sum(r.get("rank_dist", 0) for r in eval_records
+                       if not r.get("skipped")) / max(n_eval, 1)
         if args.verbose:
             print(f"  [{idx:>4}] model={model_top1:<22} agent={agent_top1:<22} "
-                  f"match={'Y' if top1_match else 'N'}  KL={kl_div:.4f}  "
-                  f"gt={gt_bases}")
+                  f"dist={rank_dist:.4f}  gt={gt_bases}")
         else:
-            sym = "OK" if top1_match else "--"
-            print(f"  [{idx:>4}] {sym}  model={model_top1:<22} agent={agent_top1:<22} "
-                  f"KL={kl_div:.4f}")
+            print(f"  [{idx:>4}]  model={model_top1:<22} agent={agent_top1:<22} "
+                  f"dist={rank_dist:6.2f}  [cum avg_dist={avg_dist:.2f}]")
 
         # ── Early stop ────────────────────────────────────────────────────────
-        if early_stop_check(eval_records, mode="forward"):
+        early_stop_threshold = 0.85 * _max_rank_dist(len(cfg.all_services))
+        if early_stop_check(eval_records, mode="forward",
+                            threshold=early_stop_threshold):
             print(
-                f"\n[CRFDFwd] EARLY STOP: first {len(eval_records)} cases all show "
-                f"top1-match < 5%. The CRFD algorithm explanation may not be "
-                f"interpretable enough for the agent to simulate."
+                f"\n[CRFDFwd] EARLY STOP: avg rank_dist exceeds "
+                f"{early_stop_threshold:.2f}. The CRFD algorithm explanation "
+                f"may not be interpretable enough for the agent to simulate."
             )
             break
 
     # ── Final summary ─────────────────────────────────────────────────────────
     write_summary(out_dir, eval_records, mode="forward", label="CRFD")
 
-    valid     = [r for r in eval_records if not r.get("skipped")]
-    n         = max(len(valid), 1)
-    top1_rate = sum(1 for r in valid if r.get("top1_match")) / n
-    top3_rate = sum(1 for r in valid if r.get("top3_match")) / n
-    kl_vals   = [r["kl_divergence"] for r in valid if "kl_divergence" in r]
-    avg_kl    = sum(kl_vals) / len(kl_vals) if kl_vals else float("nan")
+    valid    = [r for r in eval_records if not r.get("skipped")]
+    n        = max(len(valid), 1)
+    dist_vals = [r["rank_dist"] for r in valid if "rank_dist" in r]
+    avg_dist  = sum(dist_vals) / len(dist_vals) if dist_vals else float("nan")
 
     print(f"\n{'='*60}")
     print(f"  CRFD Forward Simulation — {args.dataset.upper()}  [{n} cases]")
     print(f"{'='*60}")
-    print(f"  Top-1 match rate : {top1_rate:.2%}  "
-          f"({sum(1 for r in valid if r.get('top1_match'))}/{n})")
-    print(f"  Top-3 match rate : {top3_rate:.2%}  "
-          f"({sum(1 for r in valid if r.get('top3_match'))}/{n})")
-    print(f"  Avg KL divergence: {avg_kl:.4f}")
-    print(f"  Results dir      : {os.path.abspath(out_dir)}/")
+    print(f"  Avg rank-vector dist : {avg_dist:.4f}  (lower = more similar)")
+    print(f"  Results dir          : {os.path.abspath(out_dir)}/")
     print(f"{'='*60}")
 
 

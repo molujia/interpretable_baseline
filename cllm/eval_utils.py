@@ -766,6 +766,36 @@ def kl_divergence(p_arr: np.ndarray, q_arr: np.ndarray, eps: float = 1e-10) -> f
     return float(np.sum(p * np.log(p / q)))
 
 
+def rank_vector_distance(model_ranked: list, agent_ranked: list,
+                         all_services: list) -> float:
+    """Euclidean distance between model and agent rank-position vectors.
+
+    Each service is assigned a position 1..N (lower = higher rank).
+    Services absent from a ranked list are assigned position N (last place).
+
+    Returns raw Euclidean distance (lower = more similar; 0 = identical ranking).
+    """
+    N = len(all_services)
+    svc_set = set(all_services)
+
+    def to_pos(ranked: list) -> dict:
+        pos = {s: N for s in all_services}
+        for i, s in enumerate(ranked):
+            if s in svc_set:
+                pos[s] = i + 1
+        return pos
+
+    pm = to_pos(model_ranked)
+    pa = to_pos(agent_ranked)
+    dist = math.sqrt(sum((pm[s] - pa[s]) ** 2 for s in all_services))
+    return round(dist, 4)
+
+
+def _max_rank_dist(N: int) -> float:
+    """Theoretical max Euclidean distance for two opposite rankings of N items."""
+    return math.sqrt(sum((N + 1 - 2 * i) ** 2 for i in range(1, N + 1)))
+
+
 # ---------------------------------------------------------------------------
 # Progress tracking
 # ---------------------------------------------------------------------------
@@ -845,11 +875,11 @@ def early_stop_check(
         eval_records: List of result dicts accumulated so far.
         mode:         "forward" or "counterfactual".
         n_check:      Minimum number of records needed to trigger a check.
-        threshold:    Abort if the measured rate falls below this value.
+        threshold:    For "forward": max acceptable avg rank_dist (abort if exceeded).
+                      For "counterfactual": min acceptable success rate (abort if below).
 
     Returns:
-        True if early stopping is warranted (score < threshold AND
-        len(eval_records) >= n_check), False otherwise.
+        True if early stopping is warranted, False otherwise.
     """
     if len(eval_records) < n_check:
         return False
@@ -857,15 +887,18 @@ def early_stop_check(
     subset = eval_records[:n_check]
 
     if mode == "forward":
-        matches = sum(1 for r in subset if r.get("top1_match", False))
-        rate = matches / n_check
+        dist_vals = [r.get("rank_dist", 0.0) for r in subset
+                     if not r.get("skipped") and "rank_dist" in r]
+        if len(dist_vals) < n_check:
+            return False
+        avg_d = sum(dist_vals) / len(dist_vals)
+        return avg_d > threshold
     elif mode == "counterfactual":
         successes = sum(1 for r in subset if r.get("success", False))
         rate = successes / n_check
+        return rate < threshold
     else:
         return False
-
-    return rate < threshold
 
 
 # ---------------------------------------------------------------------------
@@ -953,46 +986,24 @@ def _write_forward_summary(f, records: list) -> None:
         f.write("No valid records to summarize.\n")
         return
 
-    def _kl(r):
-        v = _get_rec(r, "kl_divergence", "kl_div")
-        try:
-            return float(v) if v is not None else None
-        except (TypeError, ValueError):
-            return None
- 
-    kl_vals = [v for r in valid for v in [_kl(r)] if v is not None and not (v != v)]  # exclude NaN
+    dist_vals = [float(r["rank_dist"]) for r in valid if "rank_dist" in r]
+    avg_dist = sum(dist_vals) / max(len(dist_vals), 1) if dist_vals else float("nan")
 
-    top1_matches = [r for r in valid if r.get("top1_match", False)]
-    top3_matches = [r for r in valid if r.get("top3_match", False)]
-
-    avg_kl = sum(kl_vals) / len(kl_vals) if kl_vals else float("nan")
-    top1_rate = len(top1_matches) / n
-    top3_rate = len(top3_matches) / n
-
-    f.write(f"Average KL divergence : {avg_kl:.4f}\n")
-    f.write(f"Top-1 match rate      : {top1_rate:.4f}  ({len(top1_matches)}/{n})\n")
-    f.write(f"Top-3 match rate      : {top3_rate:.4f}  ({len(top3_matches)}/{n})\n\n")
+    f.write(f"Avg rank-vector dist  : {avg_dist:.4f}  (lower = more similar)\n\n")
 
     f.write(
-        f"{'Case':<12} {'Ground Truth':<20} {'Predicted':<20} "
-        f"{'Top1':>6} {'Top3':>6} {'KL':>10}\n"
+        f"{'Case':<12} {'Ground Truth':<20} {'Model Top-1':<22} {'Agent Top-1':<22} {'Dist':>8}\n"
     )
-    f.write("-" * 80 + "\n")
+    f.write("-" * 90 + "\n")
     for r in valid:
-        # case_id = str(r.get("case_id", "?"))
-        # gt = str(r.get("ground_truth", "?"))
-        # pred = str(r.get("top1_prediction", "?"))
         case_id = str(_get_rec(r, "case_id", "index", default="?"))
-        # ground truth: prefer scalar string; fall back to list → take first element
         gt_raw = _get_rec(r, "ground_truth", "gt", "gt_bases", default="?")
         gt = gt_raw[0] if isinstance(gt_raw, list) else str(gt_raw)
-        pred = str(_get_rec(r, "top1_prediction", "agent_top1", default="?"))
-    
-        t1 = "Y" if r.get("top1_match", False) else "N"
-        t3 = "Y" if r.get("top3_match", False) else "N"
-        kl_v = _kl(r)
-        kl_str = f"{kl_v:>10.4f}" if kl_v is not None and not (kl_v != kl_v) else f"{'nan':>10}"
-        f.write(f"{case_id:<12} {gt:<20} {pred:<20} {t1:>6} {t3:>6} {kl_str}\n")
+        model_t1 = str(_get_rec(r, "model_top1", default="?"))
+        agent_t1 = str(_get_rec(r, "agent_top1", "top1_prediction", default="?"))
+        dist_v = r.get("rank_dist")
+        dist_str = f"{dist_v:>8.4f}" if dist_v is not None else f"{'nan':>8}"
+        f.write(f"{case_id:<12} {gt:<20} {model_t1:<22} {agent_t1:<22} {dist_str}\n")
 
 
 def _write_counterfactual_summary(f, records: list) -> None:
@@ -1018,6 +1029,126 @@ def _write_counterfactual_summary(f, records: list) -> None:
         target = str(r.get("target_service", "?"))
         success = "Y" if r.get("success", False) else "N"
         f.write(f"{case_id:<12} {orig:<22} {target:<22} {success:>8}\n")
+
+
+# ===========================================================================
+# Metric 1 — Blind Ternary Interpretability Ranking
+# ===========================================================================
+
+_ALGO_BRIEF = {
+    "CLLM": (
+        "CF-CBN (7 steps):\n"
+        "1. Map service names; collect anomalous metrics per service.\n"
+        "2. row_s = 3 × sqrt(Σ weight_m²) for each service's metrics.\n"
+        "3. total = sqrt(Σ row_s²) over all services.\n"
+        "4. CF[s] = total − sqrt(total² − row_s²)  (counterfactual reduction).\n"
+        "5. direct[s] = Σ weight_m for service s.\n"
+        "6. unsup[s] = CF[s] + 0.3 × direct[s]; min-max normalise to score[s].\n"
+        "7. Rank services by score[s] descending.\n"
+        "Metric weights: pod_cpu_usage=4.0, memory=3.5, rrt=3.5, "
+        "pod_processes=3.0, timeout=3.0, errors=2.0-2.5, network=1.0-1.5, "
+        "request/response=0.5."
+    ),
+    "RCD": (
+        "RCD (5 steps):\n"
+        "1. Map service names; collect anomalous metrics per service.\n"
+        "2. prevalence[m] = number of distinct services sharing metric m.\n"
+        "3. score[s] = Σ_{m in s} weight_m / prevalence[m].\n"
+        "4. Services not anomalous: score = 0.\n"
+        "5. Rank services by score descending.\n"
+        "Metric weights: same table as CF-CBN."
+    ),
+    "CRFD": (
+        "CRFD (6 steps):\n"
+        "1. Build weighted metric matrix X (services × metrics).\n"
+        "2. CF[s] = ||X|| − ||X with row s zeroed||.\n"
+        "3. direct[s] = Σ weight_m for service s.\n"
+        "4. propagation[s] = 0.25 × Σ_{B calls s} direct[B]  "
+        "(callers of s in the topology).\n"
+        "5. score[s] = CF[s] + 0.3 × direct[s] + propagation[s].\n"
+        "6. Rank services by score descending.\n"
+        "Requires: service call graph topology."
+    ),
+}
+
+SYSTEM_INTERPRETABILITY_RANKING = (
+    "You are a neutral evaluator assessing the interpretability of three "
+    "fault-diagnosis algorithms (labeled A, B, C).\n\n"
+    "TASK: Given the anomaly data and each method's algorithm description plus "
+    "its prediction, rank the three methods from MOST to LEAST interpretable.\n\n"
+    "'Interpretable' means: a non-expert engineer, armed only with the algorithm "
+    "description and the anomaly data, could independently verify the prediction "
+    "step by step using pencil and paper.\n\n"
+    "IMPORTANT RULES:\n"
+    "1. Do NOT consider which prediction might be correct — you do not know "
+    "the true root cause.\n"
+    "2. Judge only: how clearly and completely does the algorithm description "
+    "allow a human to reproduce the exact scores and ranking?\n"
+    "3. Criteria: (a) Are all computation steps explicit and deterministic? "
+    "(b) Can every output number be traced to the input data? "
+    "(c) Does the algorithm depend on hidden learned weights inaccessible "
+    "to the human evaluator?\n\n"
+    "Output at the end exactly this JSON:\n"
+    '{"ranking": ["X", "Y", "Z"], "reasoning": "<≤100 words>"}\n'
+    "where X is most interpretable, Z least; X/Y/Z ∈ {A, B, C}."
+)
+
+
+def build_interpretability_ranking_prompt(
+    case: dict,
+    label_to_method: dict,
+    predictions: dict,
+    services: list,
+) -> str:
+    lines = ["=== ANOMALY DATA ==="]
+    for svc, mets in case.get("anomaly_services", {}).items():
+        if mets:
+            lines.append(f"  {svc}: {mets}")
+    lines.append("")
+
+    for label in sorted(label_to_method):
+        method = label_to_method[label]
+        ranked, scores = predictions[method]
+        top5 = sorted(scores.items(), key=lambda x: -x[1])[:5]
+        lines.append(f"=== Method {label} ===")
+        lines.append(_ALGO_BRIEF[method])
+        lines.append(f"Top-1 prediction : {ranked[0] if ranked else 'unknown'}")
+        lines.append("Top-5 scores     :")
+        for svc, sc in top5:
+            lines.append(f"  {svc}: {sc:.4f}")
+        lines.append("")
+
+    lines.append("Rank methods A, B, C from most to least interpretable.")
+    return "\n".join(lines)
+
+
+def parse_interpretability_ranking_response(raw: str) -> tuple:
+    """Returns (ranking: list[str], reasoning: str) or ([], '') on failure."""
+    try:
+        data = _extract_last_json(raw)
+        ranking = data.get("ranking", [])
+        if (not isinstance(ranking, list) or len(ranking) != 3
+                or not all(x in {"A", "B", "C"} for x in ranking)
+                or len(set(ranking)) != 3):
+            return [], ""
+        return list(ranking), str(data.get("reasoning", "")).strip()
+    except Exception:
+        return [], ""
+
+
+def write_interpretability_summary(out_dir: str, records: list) -> None:
+    valid = [r for r in records if not r.get("skipped") and r.get("cllm_rank")]
+    n = max(len(valid), 1)
+    path = os.path.join(out_dir, "summary.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("=== Interpretability Ranking Evaluation Summary ===\n")
+        f.write(f"Valid cases : {len(valid)}\n\n")
+        for method, key in [("CLLM", "cllm_rank"), ("RCD", "rcd_rank"), ("CRFD", "crfd_rank")]:
+            avg_rank = sum(r[key] for r in valid) / n
+            rank1 = sum(1 for r in valid if r[key] == 1) / n
+            f.write(f"  {method:<6}  avg_rank={avg_rank:.2f}  "
+                    f"ranked_#1={rank1:.1%}\n")
+    print(f"[write_interpretability_summary] {path}")
 
 
 # ===========================================================================

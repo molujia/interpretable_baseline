@@ -26,9 +26,8 @@ LLM config: edit EVAL_PLATFORM / EVAL_MODEL in eval_utils.py
 import os
 import sys
 import json
-import math
 import argparse
-from typing import Optional, List, Dict
+from typing import Optional
 
 # Ensure cllm/ is on path when run directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -46,8 +45,8 @@ from eval_utils import (
     SYSTEM_FORWARD_SIM,
     build_forward_prompt,
     parse_forward_response,
-    to_distribution,
-    kl_divergence,
+    rank_vector_distance,
+    _max_rank_dist,
     load_progress,
     save_progress,
     append_record,
@@ -58,8 +57,9 @@ from eval_utils import (
 )
 
 # ─── Early stopping parameters ────────────────────────────────────────────────
-EARLY_STOP_N         = 20    # check after this many evaluated cases
-EARLY_STOP_THRESHOLD = 0.05  # < 5% top-1 match → prompt needs revision
+EARLY_STOP_N = 20    # check after this many evaluated cases
+# Abort if avg rank_dist > 85% of theoretical maximum
+_EARLY_STOP_MAX_DIST_FACTOR = 0.85
 
 
 # ─── Helper ───────────────────────────────────────────────────────────────────
@@ -222,51 +222,38 @@ def run(args):
             break
 
         # ── Compute metrics ───────────────────────────────────────────────
-        top1_match = (agent_top1 == model_top1) and agent_top1 != "error"
-
         agent_ranked = sorted(
             agent_scores.keys(),
             key=lambda s: -agent_scores.get(s, 0.0)
         )
-        top3_match = any(s in model_top3 for s in agent_ranked[:3])
 
-        # KL divergence P_model || P_agent (over full service list)
-        P_model = to_distribution(fused_scores,  cfg.all_services)
-        P_agent = to_distribution(agent_scores,  cfg.all_services)
-        kl_div  = kl_divergence(P_model, P_agent)
-        if math.isnan(kl_div) or math.isinf(kl_div):
-            kl_div = 9.99  # sentinel for parse failures
+        model_ranked_list = sorted(
+            [s for s in fused_scores if fused_scores[s] > 0],
+            key=lambda s: -fused_scores[s]
+        )
+        agent_ranked_list = sorted(
+            agent_scores.keys(), key=lambda s: -agent_scores.get(s, 0.0)
+        )
+        rank_dist = rank_vector_distance(model_ranked_list, agent_ranked_list,
+                                         cfg.all_services)
 
         # ── Record ────────────────────────────────────────────────────────
         rec = {
-            "index":          idx,
-            "case_id":        idx,          # canonical alias for write_summary
-            "dataset":        args.dataset,
-            "gt":             gt_bases,
-            "gt_bases":       gt_bases,     # canonical alias
-            "ground_truth":   gt_bases[0] if gt_bases else "unknown",  # canonical scalar
-            "fault_type":     fault_type,
-            "model_top1":     model_top1,
-            "model_top3":     model_top3,
-            "agent_top1":     agent_top1,
-            "top1_prediction":agent_top1,   # canonical alias for write_summary
-            "agent_top3":     agent_ranked[:3],
-            "top1_match":     top1_match,
-            "top3_match":     top3_match,
-            "kl_div":         round(kl_div, 6),
-            "kl_divergence":  round(kl_div, 6),  # canonical alias for write_summary
-            "alpha":          round(alpha, 4),
-            "n_history":      n_hist,
-            # Store top-5 for later analysis
-            "model_scores_top5": {
-                k: round(v, 5)
-                for k, v in sorted(fused_scores.items(), key=lambda x: -x[1])[:5]
-            },
-            "agent_scores_top5": {
-                k: round(v, 4)
-                for k, v in sorted(agent_scores.items(), key=lambda x: -x[1])[:5]
-            },
-            "unknown_reason":  unknown_reason,
+            "index":        idx,
+            "case_id":      idx,
+            "dataset":      args.dataset,
+            "gt":           gt_bases,
+            "gt_bases":     gt_bases,
+            "ground_truth": gt_bases[0] if gt_bases else "unknown",
+            "fault_type":   fault_type,
+            "model_top1":   model_top1,
+            "agent_top1":   agent_top1,
+            "rank_dist":    rank_dist,
+            "model_ranked": model_ranked_list[:5],
+            "agent_ranked": agent_ranked_list[:5],
+            "alpha":        round(alpha, 4),
+            "n_history":    n_hist,
+            "unknown_reason": unknown_reason,
         }
 
         all_records.append(rec)
@@ -278,27 +265,28 @@ def run(args):
         save_progress(out_dir, idx)
 
         # ── Console line ─────────────────────────────────────────────────
-        match_sym = "T" if top1_match else "F"
         n_eval = len(eval_records)
-        t1_rate = sum(1 for r in eval_records if r.get("top1_match")) / max(n_eval, 1)
-        avg_kl  = sum(r.get("kl_div", 0) for r in eval_records) / max(n_eval, 1)
-        print(f"  [{idx:>4}] {match_sym}  "
+        avg_dist = sum(r.get("rank_dist", 0) for r in eval_records) / max(n_eval, 1)
+        print(f"  [{idx:>4}]  "
               f"model={model_top1:<22} agent={agent_top1:<22}  "
-              f"KL={kl_div:6.3f}  α={alpha:.3f}  "
-              f"[cum T1={t1_rate:.1%} avgKL={avg_kl:.3f}]")
+              f"dist={rank_dist:6.2f}  α={alpha:.3f}  "
+              f"[cum avg_dist={avg_dist:.2f}]")
 
         if args.verbose:
-            print(f"         gt={gt_bases}  model_top3={model_top3}  "
-                  f"agent_top3={agent_ranked[:3]}")
+            print(f"         gt={gt_bases}  model_top5={model_ranked_list[:5]}  "
+                  f"agent_top5={agent_ranked_list[:5]}")
 
         # ── Early stopping check ─────────────────────────────────────────
+        early_stop_threshold = _EARLY_STOP_MAX_DIST_FACTOR * _max_rank_dist(
+            len(cfg.all_services))
         if early_stop_check(eval_records, mode="forward",
-                            n_check=EARLY_STOP_N, threshold=EARLY_STOP_THRESHOLD):
-            rate = sum(1 for r in eval_records[:EARLY_STOP_N]
-                       if r.get("top1_match")) / EARLY_STOP_N
+                            n_check=EARLY_STOP_N, threshold=early_stop_threshold):
+            avg_d = sum(r.get("rank_dist", 0) for r in eval_records[:EARLY_STOP_N]
+                        ) / EARLY_STOP_N
             print(f"\n{'!'*60}")
-            print(f"  EARLY STOP: first {EARLY_STOP_N} cases → top1_match={rate:.1%}")
-            print(f"  This is below threshold {EARLY_STOP_THRESHOLD:.0%}.")
+            print(f"  EARLY STOP: first {EARLY_STOP_N} cases → avg_dist={avg_d:.2f}")
+            print(f"  This exceeds threshold {early_stop_threshold:.2f} "
+                  f"({_EARLY_STOP_MAX_DIST_FACTOR:.0%} of max possible).")
             print(f"  Possible causes:")
             print(f"    • Teaching prompt not clear enough for this dataset")
             print(f"    • Model choice too weak (try gpt-4o or better)")
