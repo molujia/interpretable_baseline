@@ -176,17 +176,19 @@ def run(args):
         )
         rank_dist = rank_vector_distance(model_ranked_list, agent_ranked_list,
                                          cfg.all_services)
+        rank_dist_norm = round(rank_dist / _max_rank_dist(len(cfg.all_services)), 4)
 
         # ── Record ────────────────────────────────────────────────────────────
         rec = {
-            "index":        idx,
-            "case_id":      idx,
-            "gt_bases":     gt_bases,
-            "ground_truth": gt_bases[0] if gt_bases else "unknown",
-            "fault_type":   rc_info.get("fault_type", "unknown"),
-            "model_top1":   model_top1,
-            "agent_top1":   agent_top1,
-            "rank_dist":    rank_dist,
+            "index":          idx,
+            "case_id":        idx,
+            "gt_bases":       gt_bases,
+            "ground_truth":   gt_bases[0] if gt_bases else "unknown",
+            "fault_type":     rc_info.get("fault_type", "unknown"),
+            "model_top1":     model_top1,
+            "agent_top1":     agent_top1,
+            "rank_dist":      rank_dist,
+            "rank_dist_norm": rank_dist_norm,
             "model_ranked": model_ranked_list[:5],
             "agent_ranked": agent_ranked_list[:5],
             "model_elapsed":round(model_elapsed, 4),

@@ -986,15 +986,18 @@ def _write_forward_summary(f, records: list) -> None:
         f.write("No valid records to summarize.\n")
         return
 
-    dist_vals = [float(r["rank_dist"]) for r in valid if "rank_dist" in r]
-    avg_dist = sum(dist_vals) / max(len(dist_vals), 1) if dist_vals else float("nan")
+    dist_vals      = [float(r["rank_dist"])      for r in valid if "rank_dist"      in r]
+    dist_norm_vals = [float(r["rank_dist_norm"]) for r in valid if "rank_dist_norm" in r]
+    avg_dist      = sum(dist_vals)      / max(len(dist_vals), 1)      if dist_vals      else float("nan")
+    avg_dist_norm = sum(dist_norm_vals) / max(len(dist_norm_vals), 1) if dist_norm_vals else float("nan")
 
-    f.write(f"Avg rank-vector dist  : {avg_dist:.4f}  (lower = more similar)\n\n")
+    f.write(f"Avg rank-vector dist  : {avg_dist:.4f}  (raw)\n")
+    f.write(f"Avg rank-vector dist  : {avg_dist_norm:.4f}  (normalized ∈[0,1], cross-dataset comparable)\n\n")
 
     f.write(
-        f"{'Case':<12} {'Ground Truth':<20} {'Model Top-1':<22} {'Agent Top-1':<22} {'Dist':>8}\n"
+        f"{'Case':<12} {'Ground Truth':<20} {'Model Top-1':<22} {'Agent Top-1':<22} {'Dist':>8} {'Norm':>6}\n"
     )
-    f.write("-" * 90 + "\n")
+    f.write("-" * 98 + "\n")
     for r in valid:
         case_id = str(_get_rec(r, "case_id", "index", default="?"))
         gt_raw = _get_rec(r, "ground_truth", "gt", "gt_bases", default="?")
@@ -1002,8 +1005,10 @@ def _write_forward_summary(f, records: list) -> None:
         model_t1 = str(_get_rec(r, "model_top1", default="?"))
         agent_t1 = str(_get_rec(r, "agent_top1", "top1_prediction", default="?"))
         dist_v = r.get("rank_dist")
+        norm_v = r.get("rank_dist_norm")
         dist_str = f"{dist_v:>8.4f}" if dist_v is not None else f"{'nan':>8}"
-        f.write(f"{case_id:<12} {gt:<20} {model_t1:<22} {agent_t1:<22} {dist_str}\n")
+        norm_str = f"{norm_v:>6.4f}" if norm_v is not None else f"{'nan':>6}"
+        f.write(f"{case_id:<12} {gt:<20} {model_t1:<22} {agent_t1:<22} {dist_str} {norm_str}\n")
 
 
 def _write_counterfactual_summary(f, records: list) -> None:
