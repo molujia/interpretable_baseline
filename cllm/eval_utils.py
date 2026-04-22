@@ -552,8 +552,12 @@ def parse_forward_response(raw: str, services: list) -> tuple:
                     scores[str(svc)] = float(val)
                 except (TypeError, ValueError):
                     scores[str(svc)] = 0.0
-            if scores and top1 == "unknown":
+        # If top1 is empty or missing, infer from scores
+        if not top1 or top1 == "unknown":
+            if scores:
                 top1 = max(scores, key=lambda s: scores[s])
+            else:
+                top1 = "unknown"
         # NOTE: return is AFTER the loop so all ranking entries are captured
         return top1, scores
     except Exception as exc:
