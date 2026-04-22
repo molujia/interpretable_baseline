@@ -41,7 +41,6 @@ from eval_utils import (
     save_progress,
     append_record,
     load_records,
-    early_stop_check,
     build_memory_ctx,
     write_summary,
 )
@@ -200,25 +199,15 @@ def run(args):
         eval_records.append(rec)
 
         n_eval = len([r for r in eval_records if not r.get("skipped")])
-        avg_dist = sum(r.get("rank_dist", 0) for r in eval_records
+        avg_norm = sum(r.get("rank_dist_norm", 0) for r in eval_records
                        if not r.get("skipped")) / max(n_eval, 1)
         if args.verbose:
             print(f"  [{idx:>4}] model={model_top1:<22} agent={agent_top1:<22} "
-                  f"dist={rank_dist:.4f}  gt={gt_bases}")
+                  f"dist={rank_dist:.4f} norm={rank_dist_norm:.3f}  gt={gt_bases}")
         else:
             print(f"  [{idx:>4}]  model={model_top1:<22} agent={agent_top1:<22} "
-                  f"dist={rank_dist:6.2f}  [cum avg_dist={avg_dist:.2f}]")
-
-        # ── Early stop ────────────────────────────────────────────────────────
-        early_stop_threshold = 0.85 * _max_rank_dist(len(cfg.all_services))
-        if early_stop_check(eval_records, mode="forward",
-                            threshold=early_stop_threshold):
-            print(
-                f"\n[RCDFwd] EARLY STOP: avg rank_dist exceeds "
-                f"{early_stop_threshold:.2f}. The RCD algorithm explanation "
-                f"may not be interpretable enough for the agent to simulate."
-            )
-            break
+                  f"dist={rank_dist:6.2f} norm={rank_dist_norm:.3f}  "
+                  f"[cum avg_norm={avg_norm:.3f}]")
 
     # ── Final summary ─────────────────────────────────────────────────────────
     write_summary(out_dir, eval_records, mode="forward", label="RCD")

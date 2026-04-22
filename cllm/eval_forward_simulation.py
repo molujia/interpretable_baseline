@@ -51,15 +51,9 @@ from eval_utils import (
     save_progress,
     append_record,
     load_records,
-    early_stop_check,
     build_memory_ctx,
     write_summary,
 )
-
-# ─── Early stopping parameters ────────────────────────────────────────────────
-EARLY_STOP_N = 20    # check after this many evaluated cases
-# Abort if avg rank_dist > 85% of theoretical maximum
-_EARLY_STOP_MAX_DIST_FACTOR = 0.85
 
 
 # ─── Helper ───────────────────────────────────────────────────────────────────
@@ -88,15 +82,14 @@ def run(args):
     print(f"  {cfg.summary()}")
     print(f"  Output → {os.path.abspath(out_dir)}/")
 
-    # Load faults with same shuffle as main.py for CBN state consistency
     faults = cfg.load_faults(shuffle=True, seed=42)
 
-    # Fresh CF-CBN engine (will be re-accumulated case-by-case)
+    # Fresh CF-CBN engine — no history accumulation (each case predicted independently)
     engine = CRFDCBNEngine(
         services    = cfg.all_services,
         alpha_init  = 1.0,
-        alpha_min   = 0.20,
-        alpha_decay = 40.0,
+        alpha_min   = 1.0,   # keep alpha fixed at 1.0: no CBN history effect
+        alpha_decay = 1e9,
     )
 
     llm = EvalLLMClient()
@@ -118,22 +111,6 @@ def run(args):
     # ── Load existing progress ──────────────────────────────────────────────
     last_done = load_progress(out_dir)
     start_idx = last_done + 1
-
-    # ── Restore CBN state by replaying previous cases (no LLM calls) ────────
-    if start_idx > 0:
-        print(f"[ForwardSim] Resuming from case {start_idx}. "
-              f"Restoring CBN state for {start_idx} prior cases...")
-        for i, fault in enumerate(faults[:start_idx]):
-            prep = _preprocess(fault)
-            if prep is None:
-                continue
-            gt_bases, _ = prep
-            try:
-                engine.predict(fault)
-                engine.accumulate(fault, gt_bases)
-            except Exception:
-                pass
-        print(f"[ForwardSim] CBN restored: {engine.n_accumulated} cases in history.")
 
     # ── Load existing records ───────────────────────────────────────────────
     all_records  = load_records(out_dir)
@@ -164,20 +141,15 @@ def run(args):
 
         gt_bases, fault_type = prep
 
-        # ── Run actual CF-CBN model ───────────────────────────────────────
+        # ── Run actual CF-CBN model (no history: each case independent) ─────
         try:
             cfcbn_ranked, details = engine.predict(fault_data)
         except Exception as e:
             print(f"  [{idx:>4}] MODEL ERROR: {e}")
-            engine.accumulate(fault_data, gt_bases)
             continue
 
-        fused_scores  = details["fused_scores"]
-        alpha         = details["alpha"]
-        n_hist        = details["n_accumulated"]
-        prior_counts  = dict(engine.accumulator.prior_counts)
-        model_top1    = cfcbn_ranked[0] if cfcbn_ranked else "unknown"
-        model_top3    = cfcbn_ranked[:3]
+        fused_scores = details["fused_scores"]
+        model_top1   = cfcbn_ranked[0] if cfcbn_ranked else "unknown"
 
         # ── Build teaching prompt ─────────────────────────────────────────
         memory_ctx = build_memory_ctx(eval_records, n=3)
@@ -251,51 +223,27 @@ def run(args):
             "agent_top1":     agent_top1,
             "rank_dist":      rank_dist,
             "rank_dist_norm": rank_dist_norm,
-            "model_ranked": model_ranked_list[:5],
-            "agent_ranked": agent_ranked_list[:5],
-            "alpha":        round(alpha, 4),
-            "n_history":    n_hist,
+            "model_ranked":   model_ranked_list[:5],
+            "agent_ranked":   agent_ranked_list[:5],
             "unknown_reason": unknown_reason,
         }
 
         all_records.append(rec)
         eval_records.append(rec)
         append_record(out_dir, rec)
-
-        # ── Accumulate for CBN continuity ────────────────────────────────
-        engine.accumulate(fault_data, gt_bases)
         save_progress(out_dir, idx)
 
         # ── Console line ─────────────────────────────────────────────────
         n_eval = len(eval_records)
-        avg_dist = sum(r.get("rank_dist", 0) for r in eval_records) / max(n_eval, 1)
+        avg_norm = sum(r.get("rank_dist_norm", 0) for r in eval_records) / max(n_eval, 1)
         print(f"  [{idx:>4}]  "
               f"model={model_top1:<22} agent={agent_top1:<22}  "
-              f"dist={rank_dist:6.2f}  α={alpha:.3f}  "
-              f"[cum avg_dist={avg_dist:.2f}]")
+              f"dist={rank_dist:6.2f} norm={rank_dist_norm:.3f}  "
+              f"[cum avg_norm={avg_norm:.3f}]")
 
         if args.verbose:
             print(f"         gt={gt_bases}  model_top5={model_ranked_list[:5]}  "
                   f"agent_top5={agent_ranked_list[:5]}")
-
-        # ── Early stopping check ─────────────────────────────────────────
-        early_stop_threshold = _EARLY_STOP_MAX_DIST_FACTOR * _max_rank_dist(
-            len(cfg.all_services))
-        if early_stop_check(eval_records, mode="forward",
-                            n_check=EARLY_STOP_N, threshold=early_stop_threshold):
-            avg_d = sum(r.get("rank_dist", 0) for r in eval_records[:EARLY_STOP_N]
-                        ) / EARLY_STOP_N
-            print(f"\n{'!'*60}")
-            print(f"  EARLY STOP: first {EARLY_STOP_N} cases → avg_dist={avg_d:.2f}")
-            print(f"  This exceeds threshold {early_stop_threshold:.2f} "
-                  f"({_EARLY_STOP_MAX_DIST_FACTOR:.0%} of max possible).")
-            print(f"  Possible causes:")
-            print(f"    • Teaching prompt not clear enough for this dataset")
-            print(f"    • Model choice too weak (try gpt-4o or better)")
-            print(f"    • Dataset has naming mismatch (TT: ts-*-service names)")
-            print(f"  → Revise SYSTEM_FORWARD_SIM in eval_utils.py and retry.")
-            print(f"{'!'*60}\n")
-            break
 
     # ── Final summary ────────────────────────────────────────────────────────
     write_summary(out_dir, all_records, mode="forward")
